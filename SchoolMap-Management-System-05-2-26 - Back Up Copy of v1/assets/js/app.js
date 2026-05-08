@@ -101,13 +101,6 @@ var FAQ_ITEMS = [
   { q: "Is SchoolMap available on mobile?",a: "Yes! SchoolMap is fully responsive. You can access it from any smartphone, tablet, or desktop browser.", color: "#15803d" }
 ];
 
-var RECOMMENDATIONS = [
-  { id: "registrar",   reason: "Office hours: 8AM–5PM" },
-  { id: "library-1",  reason: "Open now • Quiet zone" },
-  { id: "cafeteria-1",reason: "Lunch break nearby" },
-  { id: "room-301",   reason: "Available now" }
-];
-
 /* =========================================================
    APPLICATION STATE
    ========================================================= */
@@ -693,7 +686,6 @@ function initMapPage() {
   renderLegendItems();
   renderMapCanvas();
   renderPins();
-  renderRecommendations();
   updateYouAreHere();
   updateRouteBtnState();
 
@@ -1172,42 +1164,6 @@ function updateYouAreHere() {
     el.style.left = "50%";
     el.style.top  = "85%";
   }
-}
-
-/* =========================================================
-   MAP PAGE — RECOMMENDATIONS BAR
-   ========================================================= */
-
-function renderRecommendations() {
-  var container = document.getElementById("rec-bar-items");
-  if (!container) { return; }
-
-  var colorMap = getColorMap();
-  var html = "";
-
-  RECOMMENDATIONS.forEach(function(rec) {
-    var loc = AppState.locations.find(function(l) { return l.id === rec.id; });
-    if (!loc) { return; }
-    var color = colorMap[loc.type] || "#192A57";
-    html += '<button class="rec-item" onclick="selectRecItem(\'' + loc.id + '\')">' +
-      '<div class="rec-dot" style="background:' + color + '"></div>' +
-      '<div>' +
-      '<div class="rec-name">' + escHtml(loc.name) + '</div>' +
-      '<div class="rec-reason">' + escHtml(rec.reason) + '</div>' +
-      '</div>' +
-      '</button>';
-  });
-
-  container.innerHTML = html || "<span style='font-size:13px;color:#2d2d2d66'>No recommendations available</span>";
-}
-
-function selectRecItem(locId) {
-  var loc = AppState.locations.find(function(l) { return l.id === locId; });
-  if (!loc) { return; }
-  if (loc.floor !== AppState.currentFloor) { switchFloor(loc.floor); }
-  AppState.selectedLocation = loc;
-  showSelectedPanel(loc);
-  renderPins();
 }
 
 /* =========================================================

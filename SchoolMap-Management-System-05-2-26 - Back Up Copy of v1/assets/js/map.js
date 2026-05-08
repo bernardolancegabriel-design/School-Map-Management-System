@@ -5,6 +5,8 @@
 
 "use strict";
 
+const ACTIVE_FLOOR_KEY = "schoolmap_active_floor";
+
 document.addEventListener("DOMContentLoaded", function () {
   loadCurrentUser();
   initMapPage();
@@ -19,8 +21,9 @@ function initMapPage() {
   AppState.routeFrom = "";
   AppState.routeTo = "";
   AppState.showRoute = false;
-  AppState.floors = getStoredFloors().slice(0, 1);
-  AppState.currentFloor = AppState.floors[0]?.id || 1;
+  AppState.floors = getStoredFloors();
+  const activeFloor = localStorage.getItem(ACTIVE_FLOOR_KEY);
+  AppState.currentFloor = activeFloor ? JSON.parse(activeFloor) : AppState.floors[0]?.id || 1;
   AppState.locations = getStoredLocations();
   AppState.legends = getStoredLegends();
 
@@ -30,8 +33,6 @@ function initMapPage() {
   renderLegendItems();
   renderMapCanvas();
   renderPins();
-  renderRecommendations();
-  updateYouAreHere();
   updateRouteBtnState();
   setupMapInteractions();
   requestAnimationFrame(enableMapTransitions);
@@ -45,7 +46,7 @@ function initMapPage() {
 }
 
 function enableMapTransitions() {
-  var zoomContainer = document.getElementById("map-zoom-container");
+  var zoomContainer = document.getElementById("mapStage");
   if (zoomContainer) zoomContainer.classList.add("map-transition-enabled");
 }
 
@@ -341,11 +342,9 @@ function switchFloor(floorId) {
   AppState.currentFloor = floorId;
   AppState.selectedLocation = null;
   renderFloorButtons();
-  updateFloorBadge();
   renderMapCanvas();
   renderPins();
   renderRouteOverlay();
-  updateYouAreHere();
   closeSelectedPanel();
 }
 
@@ -419,8 +418,8 @@ function getStoredFloorImage(floorId) {
 /* ===== MAP CANVAS ===== */
 
 function renderMapCanvas() {
-  var container = document.getElementById("map-image-container");
-  if (!container) {
+  var img = document.getElementById("floorImage");
+  if (!img) {
     return;
   }
 
@@ -430,22 +429,11 @@ function renderMapCanvas() {
   }
 
   if (imageSrc) {
-    container.innerHTML =
-      '<img src="' +
-      escAttr(imageSrc) +
-      '" alt="Floor Plan" class="map-floor-img" draggable="false" />';
+    img.src = imageSrc;
+    img.alt = "Floor Plan";
+    img.hidden = false;
   } else {
-    container.innerHTML =
-      '<div class="map-grid-bg">' +
-      '<svg style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;opacity:0.25">' +
-      '<line x1="50%" y1="10%" x2="50%" y2="90%" stroke="#2d2d2d" stroke-width="1.5" stroke-dasharray="4 4" />' +
-      '<line x1="10%" y1="50%" x2="90%" y2="50%" stroke="#2d2d2d" stroke-width="1.5" stroke-dasharray="4 4" />' +
-      '<rect x="10%" y="10%" width="38%" height="38%" fill="none" stroke="#2d2d2d" stroke-width="1" rx="4" />' +
-      '<rect x="52%" y="10%" width="38%" height="38%" fill="none" stroke="#2d2d2d" stroke-width="1" rx="4" />' +
-      '<rect x="10%" y="52%" width="38%" height="38%" fill="none" stroke="#2d2d2d" stroke-width="1" rx="4" />' +
-      '<rect x="52%" y="52%" width="38%" height="38%" fill="none" stroke="#2d2d2d" stroke-width="1" rx="4" />' +
-      "</svg>" +
-      "</div>";
+    img.hidden = true;
   }
 
   updateFloorBadge();
@@ -453,7 +441,7 @@ function renderMapCanvas() {
 }
 
 function setupMapInteractions() {
-  var zoomContainer = document.getElementById("map-zoom-container");
+  var zoomContainer = document.getElementById("mapStage");
   if (!zoomContainer) {
     return;
   }
@@ -530,7 +518,7 @@ function setupMapInteractions() {
 /* ===== PINS ===== */
 
 function renderPins() {
-  var container = document.getElementById("map-pins");
+  var container = document.getElementById("pinsLayer");
   if (!container) {
     return;
   }
@@ -1010,7 +998,7 @@ function showRoute() {
 }
 
 function renderRouteOverlay() {
-  var svg = document.getElementById("route-svg");
+  var svg = document.getElementById("routeEditorSvg");
   if (!svg) {
     return;
   }
@@ -1115,7 +1103,7 @@ function closeRoutePanel() {
     panel.style.display = "none";
   }
   AppState.showRoute = false;
-  var svg = document.getElementById("route-svg");
+  var svg = document.getElementById("routeEditorSvg");
   if (svg) {
     svg.style.display = "none";
   }
@@ -1133,8 +1121,15 @@ function resetZoom() {
   applyZoom();
 }
 
+function restoreMap() {
+  AppState.zoom = 1;
+  AppState.panX = 0;
+  AppState.panY = 0;
+  applyZoom();
+}
+
 function applyZoom() {
-  var container = document.getElementById("map-zoom-container");
+  var container = document.getElementById("mapStage");
   if (container) {
     var x = AppState.panX || 0;
     var y = AppState.panY || 0;
@@ -1147,6 +1142,11 @@ function applyZoom() {
       AppState.zoom +
       ")";
     container.style.transformOrigin = "center center";
+  }
+  
+  var zoomLabel = document.getElementById("zoomLabel");
+  if (zoomLabel) {
+    zoomLabel.textContent = Math.round(AppState.zoom * 100) + "%";
   }
 }
 
@@ -1176,63 +1176,6 @@ function updateYouAreHere() {
     el.style.left = "50%";
     el.style.top = "85%";
   }
-}
-
-/* ===== RECOMMENDATIONS ===== */
-
-function renderRecommendations() {
-  var container = document.getElementById("rec-bar-items");
-  if (!container) {
-    return;
-  }
-
-  var colorMap = getColorMap();
-  var html = "";
-
-  RECOMMENDATIONS.forEach(function (rec) {
-    var loc = AppState.locations.find(function (l) {
-      return l.id === rec.id;
-    });
-    if (!loc) {
-      return;
-    }
-    var color = colorMap[loc.type] || "#192A57";
-    html +=
-      '<button class="rec-item" onclick="selectRecItem(\'' +
-      loc.id +
-      "')\">" +
-      '<div class="rec-dot" style="background:' +
-      color +
-      '"></div>' +
-      "<div>" +
-      '<div class="rec-name">' +
-      escHtml(loc.name) +
-      "</div>" +
-      '<div class="rec-reason">' +
-      escHtml(rec.reason) +
-      "</div>" +
-      "</div>" +
-      "</button>";
-  });
-
-  container.innerHTML =
-    html ||
-    "<span style='font-size:13px;color:#2d2d2d66'>No recommendations available</span>";
-}
-
-function selectRecItem(locId) {
-  var loc = AppState.locations.find(function (l) {
-    return l.id === locId;
-  });
-  if (!loc) {
-    return;
-  }
-  if (loc.floor !== AppState.currentFloor) {
-    switchFloor(loc.floor);
-  }
-  AppState.selectedLocation = loc;
-  showSelectedPanel(loc);
-  renderPins();
 }
 
 /* ===== SIDEBAR ===== */
