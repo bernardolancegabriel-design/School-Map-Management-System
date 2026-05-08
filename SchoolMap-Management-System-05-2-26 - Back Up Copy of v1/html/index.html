@@ -1,0 +1,606 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1"
+    />
+    <title>SchoolMap — Navigate Your Campus</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Kalam:wght@300;400;700&family=Patrick+Hand&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="../assets/css/style.css" />
+  </head>
+  <body>
+    <!-- ===================================================
+       PAGE: LANDING
+  ==================================================== -->
+    <div id="page-landing" class="page">
+      <!-- Header -->
+      <header class="landing-header">
+        <div class="container landing-header-inner">
+          <button
+            class="logo-btn"
+            onclick="window.location.href = 'index.html'"
+          >
+            <div class="logo-icon">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="20"
+                height="20"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="white"
+                stroke-width="3"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"
+                />
+              </svg>
+            </div>
+            <span class="logo-text">SchoolMap</span>
+          </button>
+          <nav class="desktop-nav">
+            <button class="nav-btn" onclick="showLandingView('about')">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="16" x2="12" y2="12" />
+                <line x1="12" y1="8" x2="12.01" y2="8" />
+              </svg>
+              About
+            </button>
+            <button class="nav-btn" onclick="showLandingView('help')">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3" />
+                <line x1="12" y1="17" x2="12.01" y2="17" />
+              </svg>
+              Help
+            </button>
+          </nav>
+          <button
+            class="mobile-menu-btn"
+            onclick="toggleMobileMenu()"
+            id="mobile-menu-btn"
+          >
+            <svg
+              id="menu-icon"
+              xmlns="http://www.w3.org/2000/svg"
+              width="20"
+              height="20"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <line x1="3" y1="12" x2="21" y2="12" />
+              <line x1="3" y1="6" x2="21" y2="6" />
+              <line x1="3" y1="18" x2="21" y2="18" />
+            </svg>
+            <svg
+              id="close-icon"
+              style="display: none"
+              xmlns="http://www.w3.org/2000/svg"
+              width="20"
+              height="20"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+        <div class="mobile-nav" id="mobile-nav" style="display: none">
+          <button
+            onclick="
+              showLandingView('about');
+              toggleMobileMenu();
+            "
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="16" x2="12" y2="12" />
+              <line x1="12" y1="8" x2="12.01" y2="8" />
+            </svg>
+            About
+          </button>
+          <button
+            onclick="
+              showLandingView('help');
+              toggleMobileMenu();
+            "
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3" />
+              <line x1="12" y1="17" x2="12.01" y2="17" />
+            </svg>
+            Help
+          </button>
+        </div>
+      </header>
+
+      <!-- Main Landing Content -->
+      <main class="container landing-main">
+        <!-- HOME VIEW -->
+        <div id="landing-home" class="landing-section">
+          <!-- 3D Map Hero -->
+          <div class="hero-wrapper">
+            <div class="hero-shadow"></div>
+            <div class="hero-map-card">
+              <img
+                src="../images/map-ground-floor.png"
+                alt="Ground Floor Plan"
+                class="hero-map-img"
+                draggable="false"
+              />
+              <svg
+                class="hero-route-svg"
+                viewBox="0 0 1000 420"
+                preserveAspectRatio="none"
+              >
+                <path
+                  d="M 270 210 Q 400 140 500 210 Q 600 280 720 210"
+                  fill="none"
+                  stroke="#C24322"
+                  stroke-width="3.5"
+                  stroke-dasharray="10 6"
+                  opacity="0.85"
+                  class="route-path"
+                />
+                <circle
+                  cx="270"
+                  cy="210"
+                  r="7"
+                  fill="#15803d"
+                  stroke="white"
+                  stroke-width="2"
+                  opacity="0.9"
+                />
+                <circle
+                  cx="720"
+                  cy="210"
+                  r="7"
+                  fill="#C24322"
+                  stroke="white"
+                  stroke-width="2"
+                  opacity="0.9"
+                />
+              </svg>
+              <div class="hero-sheen"></div>
+            </div>
+            <div class="hero-pin pin-bounce">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="32"
+                height="32"
+                viewBox="0 0 24 24"
+                fill="#C24322"
+                stroke="#C24322"
+                stroke-width="2.5"
+                style="filter: drop-shadow(0 4px 8px rgba(194, 67, 34, 0.5))"
+              >
+                <path
+                  d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"
+                />
+                <circle cx="12" cy="9" r="2.5" fill="white" stroke="white" />
+              </svg>
+            </div>
+            <div class="hero-label hero-label-hall float-animation">
+              📍 Main Hall
+            </div>
+            <div
+              class="hero-label hero-label-library"
+              style="animation: float 3.5s ease-in-out infinite 0.8s"
+            >
+              📚 Library
+            </div>
+            <div
+              class="hero-label hero-label-cafeteria"
+              style="animation: float 4s ease-in-out infinite 1.2s"
+            >
+              🍽 Cafeteria
+            </div>
+            <div class="hero-compass">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="34"
+                height="30"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="#192A57"
+                stroke-width="2"
+                style="animation: float 5s ease-in-out infinite"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <polygon
+                  points="12 2 14.4 9.6 12 8 9.6 9.6 12 2"
+                  fill="#C24322"
+                />
+                <polygon
+                  points="12 22 9.6 14.4 12 16 14.4 14.4 12 22"
+                  fill="#192A57"
+                />
+              </svg>
+            </div>
+          </div>
+
+          <!-- Hero Text -->
+          <div class="hero-text">
+            <div class="wiggle">
+              <span class="hero-title-1">Navigate Your</span>
+              <span class="hero-title-2">Campus With Ease</span>
+            </div>
+            <p class="hero-subtitle">
+              Find buildings, rooms, offices, and more — all on an interactive
+              hand-drawn school map!
+            </p>
+          </div>
+
+          <!-- CTA Buttons -->
+          <div class="cta-buttons">
+            <button
+              class="wobbly-btn wobbly-btn-secondary wobbly-btn-lg"
+              onclick="handleGuestExplore()"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="30"
+                height="30"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <polygon
+                  points="12 2 14.4 9.6 12 8 9.6 9.6 12 2"
+                  fill="currentColor"
+                />
+              </svg>
+              Enter Map
+            </button>
+          </div>
+
+          <!-- Feature Cards -->
+          <div class="features-grid">
+            <div
+              class="wobbly-card wobbly-card-yellow rotate-n1"
+              style="margin-top: 8px"
+            >
+              <div class="feature-card">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="28"
+                  height="28"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="#C24322"
+                  stroke-width="2.5"
+                >
+                  <path
+                    d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"
+                  />
+                  <circle cx="12" cy="9" r="2.5" />
+                </svg>
+                <strong class="feature-title">Pin Locations</strong>
+                <p class="feature-desc">
+                  Mark any room or office on the interactive map
+                </p>
+              </div>
+            </div>
+            <div class="wobbly-card wobbly-card-white rotate-1 tack-decoration">
+              <div class="feature-card">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="28"
+                  height="28"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="#192A57"
+                  stroke-width="2.5"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <polygon
+                    points="12 2 14.4 9.6 12 8 9.6 9.6 12 2"
+                    fill="#C24322"
+                  />
+                </svg>
+                <strong class="feature-title">Find Routes</strong>
+                <p class="feature-desc">
+                  Get directions from any point to another
+                </p>
+              </div>
+            </div>
+            <div
+              class="wobbly-card wobbly-card-beige rotate-n1 tape-decoration"
+            >
+              <div class="feature-card">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="28"
+                  height="28"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="#8F3347"
+                  stroke-width="2.5"
+                >
+                  <rect x="3" y="3" width="7" height="7" />
+                  <rect x="14" y="3" width="7" height="7" />
+                  <rect x="14" y="14" width="7" height="7" />
+                  <rect x="3" y="14" width="7" height="7" />
+                </svg>
+                <strong class="feature-title">Explore Floors</strong>
+                <p class="feature-desc">
+                  Switch between floors and discover every space
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <hr class="divider" />
+          <p class="admin-hint">
+            Admin? <a class="text-link" href="login.html">Sign in</a> to manage
+            the map.
+          </p>
+        </div>
+
+        <!-- ABOUT VIEW -->
+        <div id="landing-about" class="landing-section" style="display: none">
+          <div class="section-header">
+            <div class="section-header-icon" style="background: #192a57">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="22"
+                height="22"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="white"
+                stroke-width="2"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="16" x2="12" y2="12" />
+                <line x1="12" y1="8" x2="12.01" y2="8" />
+              </svg>
+            </div>
+            <h1 class="section-title">About SchoolMap</h1>
+          </div>
+          <div class="wobbly-card wobbly-card-yellow tape-decoration rotate-n1">
+            <h2 class="card-heading" style="color: #192a57">
+              What is SchoolMap?
+            </h2>
+            <p class="card-body">
+              SchoolMap is an interactive campus navigation system designed to
+              help students, faculty, visitors, and administrators easily find
+              their way around the school. With our hand-drawn style map,
+              navigating has never been more fun!
+            </p>
+          </div>
+          <div
+            class="wobbly-card wobbly-card-white tack-decoration rotate-1"
+            style="margin-top: 20px"
+          >
+            <h2 class="card-heading" style="color: #8f3347">Our Mission</h2>
+            <p class="card-body">
+              We believe that every student and visitor deserves to feel at home
+              on campus from day one. SchoolMap eliminates confusion and helps
+              everyone find classrooms, offices, restrooms, and facilities with
+              ease.
+            </p>
+          </div>
+          <div
+            class="wobbly-card wobbly-card-beige rotate-n1"
+            style="margin-top: 20px"
+          >
+            <h2 class="card-heading" style="color: #c24322">Key Features</h2>
+            <ul class="feature-list">
+              <li>✏ Interactive multi-floor campus map</li>
+              <li>✏ Route finder between any two locations</li>
+              <li>✏ Color-coded legend for room types</li>
+              <li>✏ Kiosk-friendly interface for common areas</li>
+              <li>✏ Admin tools for map management</li>
+              <li>✏ Accessible for students, faculty, and visitors</li>
+            </ul>
+          </div>
+          <div
+            class="wobbly-card wobbly-card-white tape-decoration rotate-1"
+            style="margin-top: 20px"
+          >
+            <h2 class="card-heading" style="color: #192a57">Who Is It For?</h2>
+            <div class="who-grid">
+              <div class="who-item">
+                <span>🎓</span>
+                <div>
+                  <strong>Students</strong><br /><small
+                    >Find classrooms &amp; campus resources</small
+                  >
+                </div>
+              </div>
+              <div class="who-item">
+                <span>👩‍🏫</span>
+                <div>
+                  <strong>Faculty</strong><br /><small
+                    >Access offices and schedule rooms</small
+                  >
+                </div>
+              </div>
+              <div class="who-item">
+                <span>🗺️</span>
+                <div>
+                  <strong>Visitors</strong><br /><small
+                    >Navigate the campus with ease</small
+                  >
+                </div>
+              </div>
+              <div class="who-item">
+                <span>🔧</span>
+                <div>
+                  <strong>Admins</strong><br /><small
+                    >Manage and update the map</small
+                  >
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- HELP VIEW -->
+        <div id="landing-help" class="landing-section" style="display: none">
+          <div class="section-header">
+            <div class="section-header-icon" style="background: #c24322">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="22"
+                height="22"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="white"
+                stroke-width="2"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3" />
+                <line x1="12" y1="17" x2="12.01" y2="17" />
+              </svg>
+            </div>
+            <h1 class="section-title">Help &amp; FAQ</h1>
+          </div>
+          <div class="faq-list" id="faq-list"></div>
+          <div class="help-cta">
+            <p>Ready to explore your campus?</p>
+            <button
+              class="wobbly-btn wobbly-btn-primary wobbly-btn-lg"
+              onclick="window.location.href = 'map.html'"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="18"
+                height="18"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path
+                  d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"
+                />
+              </svg>
+              Open the Map
+            </button>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast" style="display: none"></div>
+
+    <script src="../assets/js/core.js"></script>
+    <script src="../assets/js/index.js"></script>
+    <script>
+      // Landing-specific: show sub-views (About / Help)
+      function showLandingView(view) {
+        document.getElementById("landing-home").style.display = "none";
+        document.getElementById("landing-about").style.display = "none";
+        document.getElementById("landing-help").style.display = "none";
+        const target = document.getElementById("landing-" + view);
+        if (target) target.style.display = "block";
+        if (view === "help") renderFaq();
+      }
+
+      function toggleMobileMenu() {
+        const nav = document.getElementById("mobile-nav");
+        const menuIcon = document.getElementById("menu-icon");
+        const closeIcon = document.getElementById("close-icon");
+        const open = nav.style.display === "none" || nav.style.display === "";
+        nav.style.display = open ? "flex" : "none";
+        menuIcon.style.display = open ? "none" : "block";
+        closeIcon.style.display = open ? "block" : "none";
+      }
+
+      function renderFaq() {
+        const faqs = [
+          {
+            q: "How do I find a room?",
+            a: "Use the search bar at the top of the map page or browse the legend to filter by room type.",
+          },
+          {
+            q: "Can I use SchoolMap without an account?",
+            a: 'Yes! Click "Explore as Guest" on the home page to access the map without signing in.',
+          },
+          {
+            q: "How do I get directions?",
+            a: 'On the map page, use the "Find Your Way" bar at the top to select a starting point and destination.',
+          },
+          {
+            q: "How do I switch floors?",
+            a: "Use the Floors panel on the left sidebar of the map to switch between building floors.",
+          },
+          {
+            q: "Can admins update the map?",
+            a: "Yes. Admins can log in and access the Admin Panel to add, edit, or remove locations and floors.",
+          },
+        ];
+        const container = document.getElementById("faq-list");
+        if (!container) return;
+        container.innerHTML = faqs
+          .map(
+            (f, i) => `
+        <div class="wobbly-card wobbly-card-${i % 2 === 0 ? "white" : "beige"} ${i % 2 === 0 ? "rotate-n1" : "rotate-1"}" style="margin-bottom:14px; cursor:pointer" onclick="this.querySelector('.faq-answer').style.display = this.querySelector('.faq-answer').style.display === 'none' ? 'block' : 'none'">
+          <p style="font-family:'Kalam',cursive; font-weight:700; font-size:15px; margin:0 0 6px">❓ ${f.q}</p>
+          <p class="faq-answer" style="display:none; font-size:14px; color:#2d2d2d99; margin:0">${f.a}</p>
+        </div>
+      `,
+          )
+          .join("");
+      }
+
+      /* Add this inside the <script> tag at the bottom of index.html */
+      function handleGuestExplore() {
+        // Set a flag so map.html knows to show the LogBook
+        sessionStorage.setItem("guest_mode", "true");
+        window.location.href = "map.html";
+      }
+    </script>
+  </body>
+</html>

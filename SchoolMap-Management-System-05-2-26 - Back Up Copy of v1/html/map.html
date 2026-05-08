@@ -1,0 +1,647 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1"
+    />
+    <title>SchoolMap — Campus Map</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Kalam:wght@300;400;700&family=Patrick+Hand&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="../assets/css/style.css" />
+  </head>
+  <body>
+    <!-- ===================================================
+       PAGE: MAP DASHBOARD
+  ==================================================== -->
+    <div id="page-map" class="page">
+      <div
+        id="map-entry-banner"
+        class="map-entry-banner"
+        role="status"
+        aria-live="polite"
+      >
+        <span class="entry-banner-text"
+          >Entering SchoolMap... <span class="running-emoji">🏃‍♂️</span></span
+        >
+        <span class="loading-dots"
+          ><span></span><span></span><span></span
+        ></span>
+      </div>
+      <!-- MAP HEADER -->
+      <header class="map-header">
+        <div class="map-header-top">
+          <button
+            class="logo-btn"
+            onclick="window.location.href = 'index.html'"
+            style="flex-shrink: 0"
+          >
+            <div class="logo-icon" style="padding: 4px">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="white"
+                stroke-width="3"
+              >
+                <path
+                  d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"
+                />
+                <circle cx="12" cy="9" r="2.5" fill="white" />
+              </svg>
+            </div>
+            <span class="logo-text map-logo-text">SchoolMap</span>
+          </button>
+          <div class="map-search-wrapper">
+            <svg
+              class="search-icon"
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <input
+              type="search"
+              id="map-search"
+              class="map-search-input wobbly-input"
+              placeholder="Search rooms, offices, facilities..."
+              oninput="handleMapSearch(this.value)"
+            />
+            <div
+              id="search-results"
+              class="search-results"
+              style="display: none"
+            ></div>
+          </div>
+          <div class="map-tagline">Your campus, clearly mapped ✏</div>
+          <div class="map-user-area" id="map-user-area">
+            <!-- Populated by JS -->
+          </div>
+          <button
+            class="mobile-menu-btn map-sidebar-toggle"
+            onclick="toggleMapSidebar()"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <line x1="3" y1="12" x2="21" y2="12" />
+              <line x1="3" y1="6" x2="21" y2="6" />
+              <line x1="3" y1="18" x2="21" y2="18" />
+            </svg>
+          </button>
+        </div>
+        <!-- Route Finder Sub-header -->
+        <div class="map-route-bar">
+          <span class="route-label">📍 Find Your Way:</span>
+
+          <select
+            id="route-from"
+            class="route-select"
+            onchange="handleRouteChange()"
+          >
+            <option value="">From: Select location</option>
+          </select>
+
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="14"
+            height="14"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="rgba(255,255,255,0.5)"
+            stroke-width="2"
+            class="route-arrow"
+          >
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+
+          <select
+            id="route-to"
+            class="route-select"
+            onchange="handleRouteChange()"
+          >
+            <option value="">To: Select destination</option>
+          </select>
+
+          <button
+            class="wobbly-btn route-btn"
+            id="show-route-btn"
+            onclick="showRoute()"
+            disabled
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="14"
+              height="14"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <polygon points="3 11 22 2 13 21 11 13 3 11" />
+            </svg>
+            Show Route
+          </button>
+
+          <!-- Accessibility Toggle -->
+          <div class="accessibility-toggle-container">
+            <span class="toggle-text">Accessible</span>
+            <input
+              type="checkbox"
+              id="accessibility-toggle"
+              class="accessibility-toggle-input"
+              onchange="toggleAccessibility()"
+            />
+            <label
+              for="accessibility-toggle"
+              class="accessibility-toggle-label"
+            ></label>
+          </div>
+        </div>
+      </header>
+
+      <!-- MAP BODY -->
+      <div class="map-body">
+        <!-- SIDEBAR -->
+        <aside id="map-sidebar" class="map-sidebar">
+          <!-- Floor Selector -->
+          <div class="sidebar-section">
+            <div class="sidebar-section-title">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="14"
+                height="14"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="#192A57"
+                stroke-width="2"
+              >
+                <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+                <line x1="8" y1="21" x2="16" y2="21" />
+                <line x1="12" y1="17" x2="12" y2="21" />
+              </svg>
+              <span>Floors</span>
+            </div>
+            <div id="floor-buttons" class="floor-buttons"></div>
+          </div>
+          <!-- Legend -->
+          <div class="sidebar-section" style="flex: 1">
+            <div
+              class="sidebar-section-title"
+              style="justify-content: space-between"
+            >
+              <div style="display: flex; align-items: center; gap: 6px">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="14"
+                  height="14"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="#192A57"
+                  stroke-width="2"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="12" y1="16" x2="12" y2="12" />
+                  <line x1="12" y1="8" x2="12.01" y2="8" />
+                </svg>
+                <span>Legend</span>
+              </div>
+              <button
+                class="text-link"
+                style="font-size: 12px"
+                onclick="toggleLegend()"
+                id="legend-toggle-btn"
+              >
+                Hide
+              </button>
+            </div>
+            <div id="legend-items" class="legend-items"></div>
+          </div>
+          <!-- Show Labels Toggle -->
+          <div class="sidebar-section sidebar-bottom">
+            <label class="toggle-label">
+              <input
+                type="checkbox"
+                id="show-labels-toggle"
+                checked
+                onchange="toggleLabels(this.checked)"
+              />
+              Show Labels
+            </label>
+          </div>
+        </aside>
+
+        <!-- MAP CANVAS AREA -->
+        <div class="map-canvas-area" onclick="closeUserMenu()">
+          <div class="map-canvas-wrapper" id="map-canvas-wrapper">
+            <div class="map-zoom-container" id="map-zoom-container">
+              <div class="map-floor-card">
+                <!-- Floor badge -->
+                <div class="floor-badge" id="floor-badge">Ground Floor</div>
+                <!-- Map image / placeholder -->
+                <div class="map-image-container" id="map-image-container">
+                  <!-- Content set by JS -->
+                </div>
+                <!-- SVG overlays for routes & pins -->
+                <svg
+                  class="map-overlay-svg"
+                  id="route-svg"
+                  style="display: none"
+                >
+                  <line
+                    id="route-line"
+                    stroke="#C24322"
+                    stroke-width="3.5"
+                    stroke-dasharray="8 4"
+                    class="route-path"
+                  />
+                  <circle
+                    id="route-from-dot"
+                    r="6"
+                    fill="#15803d"
+                    stroke="white"
+                    stroke-width="2"
+                  />
+                  <circle
+                    id="route-to-dot"
+                    r="6"
+                    fill="#C24322"
+                    stroke="white"
+                    stroke-width="2"
+                  />
+                </svg>
+                <div id="map-pins" class="map-pins-layer"></div>
+                <!-- You are here -->
+                <div class="you-are-here" id="you-are-here">
+                  <div class="you-dot"></div>
+                  <div class="you-label">You</div>
+                </div>
+                <!-- Compass -->
+                <div class="map-compass">N↑</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Zoom Controls -->
+          <div class="zoom-controls">
+            <button class="zoom-btn" onclick="changeZoom(0.2)">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="18"
+                height="18"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                <line x1="11" y1="8" x2="11" y2="14" />
+                <line x1="8" y1="11" x2="14" y2="11" />
+              </svg>
+            </button>
+            <button class="zoom-btn" onclick="changeZoom(-0.2)">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="18"
+                height="18"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                <line x1="8" y1="11" x2="14" y2="11" />
+              </svg>
+            </button>
+            <button class="zoom-btn zoom-reset" onclick="resetZoom()">
+              1x
+            </button>
+          </div>
+
+          <!-- Selected Location Panel -->
+          <div id="selected-panel" class="selected-panel" style="display: none">
+            <div
+              class="wobbly-card wobbly-card-white tack-decoration"
+              style="padding: 12px; padding-top: 20px"
+            >
+              <button class="panel-close" onclick="closeSelectedPanel()">
+                ✕
+              </button>
+              <div
+                class="selected-panel-content"
+                id="selected-panel-content"
+              ></div>
+            </div>
+          </div>
+
+          <!-- Recommendations Bar -->
+          <div class="recommendations-bar">
+            <div class="rec-bar-header">
+              <div class="rec-bar-title">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="14"
+                  height="14"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="#C24322"
+                  stroke-width="2"
+                >
+                  <polygon
+                    points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"
+                  />
+                </svg>
+                Recommended Places
+              </div>
+              <span class="rec-bar-time">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="12"
+                  height="12"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <polyline points="12 6 12 12 16 14" />
+                </svg>
+                Updated now
+              </span>
+            </div>
+            <div class="rec-bar-items" id="rec-bar-items"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast" style="display: none"></div>
+
+    <div id="logoutModal" class="modal-overlay" style="display: none">
+      <div class="confirm-card">
+        <h2>Confirm logout</h2>
+        <p>
+          Are you sure you want to sign out? Your session will end and the
+          dashboard will return to guest view.
+        </p>
+        <div class="confirm-actions">
+          <button
+            class="wobbly-btn wobbly-btn-secondary"
+            onclick="hideLogoutModal()"
+          >
+            Cancel
+          </button>
+          <button
+            class="wobbly-btn wobbly-btn-danger"
+            onclick="confirmLogout()"
+          >
+            Logout
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- User Dropdown Menu -->
+    <div id="user-dropdown" class="user-dropdown" style="display: none">
+      <div class="user-dropdown-name" id="user-dropdown-name"></div>
+      <div class="user-dropdown-role" id="user-dropdown-role"></div>
+      <hr style="border-color: #2d2d2d22; margin: 4px 0" />
+      <button
+        id="user-dropdown-admin"
+        class="user-dropdown-item"
+        onclick="verifyAdminAccess()"
+        style="display: none"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="14"
+          height="14"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <circle cx="12" cy="12" r="3" />
+          <path
+            d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33"
+          />
+        </svg>
+        Admin Panel
+      </button>
+      <button
+        class="user-dropdown-item user-dropdown-logout"
+        onclick="handleLogout()"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="14"
+          height="14"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" />
+          <polyline points="16 17 21 12 16 7" />
+          <line x1="21" y1="12" x2="9" y2="12" />
+        </svg>
+        Logout
+      </button>
+    </div>
+
+    <!-- Admin Access Modal -->
+    <div id="adminVerifyModal" class="modal-overlay" style="display: none">
+      <div class="confirm-card">
+        <h2>Admin access required</h2>
+        <p>
+          Only the authorized administrator may open the admin panel. Press
+          continue to proceed.
+        </p>
+        <div class="confirm-actions">
+          <button
+            class="wobbly-btn wobbly-btn-secondary"
+            onclick="closeAdminVerifyModal()"
+          >
+            Cancel
+          </button>
+          <button
+            class="wobbly-btn wobbly-btn-primary"
+            onclick="proceedToAdminPanel()"
+          >
+            Continue
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast" style="display: none"></div>
+
+    <script src="../assets/js/core.js"></script>
+    <script src="../assets/js/map.js"></script>
+
+    <!-- ===================================================
+     GUEST LOGBOOK MODAL
+==================================================== -->
+    <div id="guest-logbook-modal" class="guest-modal-overlay">
+      <div
+        id="guest-modal-card"
+        class="guest-logbook-card wobbly-card wobbly-card-beige"
+      >
+        <div class="tape-decoration" style="top: -15px"></div>
+
+        <div class="guest-header">
+          <h2 id="modal-title">Visitor Logbook</h2>
+          <p id="modal-subtitle">
+            Please fill out this form before entering the campus map.
+          </p>
+        </div>
+
+        <form
+          id="guest-logbook-form"
+          class="guest-form"
+          onsubmit="handleGuestSubmit(event)"
+        >
+          <!-- Name -->
+          <div class="guest-field">
+            <label class="guest-label">Your Full Name</label>
+            <input
+              type="text"
+              id="guest-name"
+              class="wobbly-input"
+              placeholder="Ex: Juan Dela Cruz"
+              required
+              autocomplete="off"
+            />
+          </div>
+
+          <!-- Category -->
+          <div class="guest-field">
+            <label class="guest-label">Category</label>
+            <select
+              id="guest-category"
+              class="wobbly-input guest-input-select"
+              required
+            >
+              <option value="" disabled selected>Select Category...</option>
+              <option value="Student">Student</option>
+              <option value="Alumni">Alumni</option>
+              <option value="Visitor">Visitor</option>
+              <option value="Staff">Staff</option>
+            </select>
+          </div>
+
+          <!-- Purpose -->
+          <div class="guest-field">
+            <label class="guest-label">Purpose of Visit</label>
+            <input
+              type="text"
+              id="guest-purpose"
+              class="wobbly-input"
+              placeholder="Ex: Enrollment, Inquiry, Meeting"
+              required
+              autocomplete="off"
+            />
+          </div>
+
+          <!-- Destination -->
+<div class="guest-field">
+  <label class="guest-label">Destination</label>
+  <input
+    type="text"
+    id="guest-destination"
+    class="wobbly-input"
+    placeholder="Ex: Room 101, Principal's Office"
+    required
+    autocomplete="off"
+  />
+</div>
+
+<!-- Plate Number -->
+<div class="guest-field">
+  <label class="guest-label">Plate No. <span style="font-size:12px;color:#999">(optional)</span></label>
+  <input
+    type="text"
+    id="guest-plate"
+    class="wobbly-input"
+    placeholder="Ex: ABC 1234"
+    autocomplete="off"
+  />
+</div>
+
+          <!-- Date -->
+          <div class="guest-field">
+            <label class="guest-label">Time & Date</label>
+            <input
+              type="text"
+              id="guest-datetime"
+              class="wobbly-input guest-input-readonly"
+              readonly
+            />
+          </div>
+
+          <button
+            type="submit"
+            id="guest-submit-btn"
+            class="wobbly-btn wobbly-btn-primary w-full guest-submit-btn"
+          >
+            Continue to Map
+          </button>
+
+          <div class="guest-back" id="guest-back-link">
+            <a href="index.html" onclick="cancelGuestFlow(event)"
+              >← Back to Main Page</a
+            >
+          </div>
+        </form>
+      </div>
+    </div>
+    <!-- Guest Logout Confirmation Modal -->
+    <div id="guest-logout-modal" class="modal-overlay" style="display: none">
+      <div class="confirm-card" style="max-width: 380px">
+        <h2 style="color: #c24322">Log Out</h2>
+        <p id="logout-guest-info" style="margin: 15px 0; font-size: 15px"></p>
+        <p style="color: #666; margin-bottom: 20px">
+          Are you sure you want to log out?
+        </p>
+
+        <div class="confirm-actions">
+          <button
+            class="wobbly-btn wobbly-btn-secondary"
+            onclick="cancelGuestLogout()"
+          >
+            Cancel
+          </button>
+          <button
+            class="wobbly-btn wobbly-btn-danger"
+            onclick="confirmGuestLogout()"
+          >
+            Log Out
+          </button>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

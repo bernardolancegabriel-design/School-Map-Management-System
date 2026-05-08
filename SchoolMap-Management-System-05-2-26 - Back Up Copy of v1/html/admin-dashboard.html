@@ -1,0 +1,564 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SchoolMap — Admin Panel</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=Patrick+Hand&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="../assets/css/style.css" />
+  </head>
+  <body>
+    <div id="adminLoadingOverlay" class="admin-loading-overlay">
+      <div class="admin-loading-card verification-card">
+        <h2 id="admin-loading-text">Administrator confirmation</h2>
+
+        <div class="verification-step" id="verificationStep1">
+          <p class="verification-instruction">
+            Complete both checks to continue into the admin panel.
+          </p>
+
+          <div class="verification-checkbox">
+            <input type="checkbox" id="confirmAdmin" />
+            <label for="confirmAdmin"
+              >I confirm I am the authorized SchoolMap administrator.</label
+            >
+          </div>
+
+          <div class="verification-checkbox">
+            <input type="checkbox" id="confirmResponsibility" />
+            <label for="confirmResponsibility"
+              >I understand edits are permanent and will proceed
+              carefully.</label
+            >
+          </div>
+
+          <button
+            class="btn btn-primary verification-button"
+            id="verificationContinue"
+            disabled
+          >
+            Proceed to slide verification
+          </button>
+        </div>
+
+        <div class="verification-step hidden" id="verificationStep2">
+          <p class="verification-instruction">
+            Drag the handle all the way to confirm your access.
+          </p>
+
+          <div class="verification-track" id="verificationTrack">
+            <div class="verification-text">Slide to confirm</div>
+            <div class="verification-handle" id="verificationHandle">↔</div>
+          </div>
+
+          <p class="verification-note">
+            This verification appears once before admin edit mode.
+          </p>
+        </div>
+      </div>
+    </div>
+    <div class="admin-app hidden">
+      <!-- ========================================================= -->
+      <!-- ADMIN PANEL: Control panel sidebar / configuration editor -->
+      <!-- ========================================================= -->
+      <aside class="control-panel">
+        <header class="cp-head">
+          <div class="brand">
+            <div class="brand-logo">
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
+                <circle cx="12" cy="10" r="3" />
+              </svg>
+            </div>
+            <div>
+              <h1>SchoolMap</h1>
+              <p>Admin Console</p>
+            </div>
+          </div>
+          <button class="icon-btn" id="backBtn" title="Back">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="m12 19-7-7 7-7" />
+              <path d="M19 12H5" />
+            </svg>
+          </button>
+        </header>
+
+        <nav class="section-tabs">
+          <button class="tab active" data-section="floors">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="m12 2 9 5-9 5-9-5 9-5Z" />
+              <path d="m3 12 9 5 9-5" />
+              <path d="m3 17 9 5 9-5" />
+            </svg>
+            <span>Floors</span>
+          </button>
+          <button class="tab" data-section="pins">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
+              <circle cx="12" cy="10" r="3" />
+            </svg>
+            <span>Pins</span>
+          </button>
+          <button class="tab" data-section="routes">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M4 4h16v16H4z" />
+              <path d="M7 12h10" />
+              <path d="M12 7v10" />
+              <path d="M7 7l5 5 5-5" />
+            </svg>
+            <span>Route</span>
+          </button>
+          <button class="tab" data-section="legends">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <circle cx="13.5" cy="6.5" r=".5" fill="currentColor" />
+              <circle cx="17.5" cy="10.5" r=".5" fill="currentColor" />
+              <circle cx="8.5" cy="7.5" r=".5" fill="currentColor" />
+              <circle cx="6.5" cy="12.5" r=".5" fill="currentColor" />
+              <path
+                d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2Z"
+              />
+            </svg>
+            <span>Legends</span>
+          </button>
+        </nav>
+
+        <div class="cp-body" id="cpBody">
+          <!-- Dynamic content rendered by admin-dashboard.js -->
+        </div>
+
+        <footer class="cp-foot">
+          <button class="btn btn-ghost" id="resetBtn">
+            <svg
+              width="13"
+              height="13"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+              <path d="M3 3v5h5" />
+            </svg>
+            Reset
+          </button>
+          <button class="btn btn-primary" id="saveBtn">
+            <svg
+              width="13"
+              height="13"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path
+                d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"
+              />
+              <path d="M17 21v-8H7v8" />
+              <path d="M7 3v5h8" />
+            </svg>
+            Save All
+          </button>
+        </footer>
+      </aside>
+
+      <!-- ========================================================= -->
+      <!-- ADMIN PANEL: Map canvas, overlay, pins, and route preview -->
+      <!-- ========================================================= -->
+      <main class="map-panel">
+        <div class="map-toolbar">
+          <div class="map-toolbar-left">
+            <span class="floor-tag" id="floorTag">—</span>
+            <span class="muted" id="floorName">No floor selected</span>
+            <div class="floor-switch" id="floorSwitch"></div>
+          </div>
+          <div class="map-toolbar-right">
+            <button class="icon-btn" id="gridBtn" title="Toggle grid">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <rect width="7" height="7" x="3" y="3" rx="1" />
+                <rect width="7" height="7" x="14" y="3" rx="1" />
+                <rect width="7" height="7" x="14" y="14" rx="1" />
+                <rect width="7" height="7" x="3" y="14" rx="1" />
+              </svg>
+            </button>
+            <button class="icon-btn" id="restoreMapBtn" title="Restore map">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M4 4v6h6" />
+                <path d="M20 20v-6h-6" />
+                <path d="M5.5 11.5a7.5 7.5 0 0 1 13.5 2.5" />
+              </svg>
+            </button>
+            <button
+              class="icon-btn"
+              id="legendBtn"
+              title="Toggle legend overlay"
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+            </button>
+            <div class="zoom-group">
+              <button class="icon-btn zoom-out" id="zoomOut">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <circle cx="11" cy="11" r="8" />
+                  <path d="m21 21-4.3-4.3" />
+                  <path d="M8 11h6" />
+                </svg>
+              </button>
+              <span id="zoomLabel">100%</span>
+              <button class="icon-btn zoom-in" id="zoomIn">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <circle cx="11" cy="11" r="8" />
+                  <path d="m21 21-4.3-4.3" />
+                  <path d="M11 8v6" />
+                  <path d="M8 11h6" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="map-stage" id="mapStage">
+          <div class="map-canvas" id="mapCanvas">
+            <div class="grid-overlay" id="gridOverlay" hidden></div>
+            <svg class="route-editor-svg" id="routeEditorSvg"></svg>
+            <div class="route-points-layer" id="routePointsLayer"></div>
+            <img class="floor-image" id="floorImage" alt="" hidden />
+            <div class="empty-state" id="emptyState">
+              <svg
+                width="42"
+                height="42"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                opacity=".4"
+              >
+                <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
+                <circle cx="12" cy="10" r="3" />
+              </svg>
+              <p id="emptyStateText"></p>
+            </div>
+            <div class="pins-layer" id="pinsLayer"></div>
+          </div>
+          <div class="legend-overlay" id="legendOverlay" hidden></div>
+          <div class="pin-tooltip" id="pinTooltip"></div>
+        </div>
+
+        <div class="map-footer">
+          <span class="muted">
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M5 9l-3 3 3 3" />
+              <path d="m9 5 3-3 3 3" />
+              <path d="M15 19l-3 3-3-3" />
+              <path d="m19 9 3 3-3 3" />
+              <path d="M2 12h20" />
+              <path d="M12 2v20" />
+            </svg>
+            Drag pins to reposition · Click empty area to add a pin · Scroll to
+            zoom
+          </span>
+        </div>
+      </main>
+
+      <div class="toast" id="toast"></div>
+    </div>
+
+    <!-- ========================================================= -->
+    <!-- ADMIN PANEL: Floor image preview modal for uploaded map assets -->
+    <!-- ========================================================= -->
+    <div class="floor-image-preview-panel" id="floorImagePreviewPanel" hidden>
+      <div class="preview-header">
+        <div class="preview-title">Floor image preview</div>
+        <button class="btn btn-ghost small" data-action="preview-close">
+          Close
+        </button>
+      </div>
+      <img id="floorImagePreview" alt="Floor preview" />
+      <div class="preview-actions">
+        <button class="btn btn-primary" data-action="preview-change-image">
+          Change image
+        </button>
+      </div>
+      <div class="preview-note">
+        Recommended size: 1080 × 1920 for higher quality. Crop the image before
+        upload for the best map fit.
+      </div>
+    </div>
+
+    <script>
+      function getCachedCurrentUser() {
+        try {
+          return JSON.parse(
+            localStorage.getItem("schoolmap_current_user") || "null",
+          );
+        } catch (err) {
+          return null;
+        }
+      }
+
+      function updateAdminLoadingText(message) {
+        var el = document.getElementById("admin-loading-text");
+        if (el) {
+          el.textContent = message;
+        }
+      }
+
+      function hideAdminLoadingOverlay() {
+        var overlay = document.getElementById("adminLoadingOverlay");
+        if (overlay) {
+          overlay.style.display = "none";
+        }
+      }
+
+      function showAdminLoadingOverlay() {
+        var overlay = document.getElementById("adminLoadingOverlay");
+        if (overlay) {
+          overlay.style.display = "flex";
+        }
+      }
+
+      function verifyAdminPanelAccess() {
+        showAdminLoadingOverlay();
+        updateAdminLoadingText("Verify admin access");
+
+        if (typeof requireAdminPage === "function") {
+          if (!requireAdminPage()) {
+            return false;
+          }
+        } else {
+          var user = getCachedCurrentUser();
+          if (!user || user.role !== "admin") {
+            alert(
+              "Admin access only. Please sign in with the administrator account.",
+            );
+            window.location.href = "login.html";
+            return false;
+          }
+        }
+
+        initializeAdminVerification();
+        return true;
+      }
+
+      function initializeAdminVerification() {
+        var overlay = document.getElementById("adminLoadingOverlay");
+        var step1 = document.getElementById("verificationStep1");
+        var step2 = document.getElementById("verificationStep2");
+        var proceedBtn = document.getElementById("verificationContinue");
+        var confirmAdmin = document.getElementById("confirmAdmin");
+        var confirmResponsibility = document.getElementById(
+          "confirmResponsibility",
+        );
+        if (
+          !overlay ||
+          !step1 ||
+          !step2 ||
+          !proceedBtn ||
+          !confirmAdmin ||
+          !confirmResponsibility
+        ) {
+          return;
+        }
+
+        function updateProceedState() {
+          proceedBtn.disabled = !(
+            confirmAdmin.checked && confirmResponsibility.checked
+          );
+        }
+
+        confirmAdmin.addEventListener("change", updateProceedState);
+        confirmResponsibility.addEventListener("change", updateProceedState);
+
+        proceedBtn.addEventListener("click", function () {
+          step1.classList.add("hidden");
+          step2.classList.remove("hidden");
+          updateAdminLoadingText("Slide verification");
+          setupSlideVerification();
+        });
+
+        function setupSlideVerification() {
+          var handle = document.getElementById("verificationHandle");
+          var track = document.getElementById("verificationTrack");
+          var text = document.querySelector(".verification-text");
+          if (!handle || !track || !text) {
+            return;
+          }
+
+          var dragging = false;
+          var startX = 0;
+          var maxX = track.clientWidth - handle.clientWidth;
+
+          function finishVerification() {
+            text.textContent = "Verified — loading admin console...";
+            handle.style.transform = "translateX(" + maxX + "px)";
+            setTimeout(function () {
+              hideAdminLoadingOverlay();
+              var app = document.querySelector(".admin-app");
+              if (app) {
+                app.classList.remove("hidden");
+              }
+            }, 400);
+          }
+
+          function resetHandle() {
+            handle.style.transform = "translateX(0px)";
+            text.textContent = "Slide to confirm";
+          }
+
+          handle.addEventListener("pointerdown", function (event) {
+            dragging = true;
+            startX = event.clientX;
+            handle.setPointerCapture(event.pointerId);
+          });
+
+          document.addEventListener("pointermove", function (event) {
+            if (!dragging) {
+              return;
+            }
+            var delta = event.clientX - startX;
+            var x = Math.max(0, Math.min(maxX, delta));
+            handle.style.transform = "translateX(" + x + "px)";
+            if (x >= maxX) {
+              dragging = false;
+              finishVerification();
+            }
+          });
+
+          document.addEventListener("pointerup", function () {
+            if (!dragging) {
+              return;
+            }
+            dragging = false;
+            resetHandle();
+          });
+        }
+      }
+
+      window.addEventListener("DOMContentLoaded", function () {
+        verifyAdminPanelAccess();
+      });
+    </script>
+    <script src="../assets/js/core.js"></script>
+    <script src="../assets/js/admin-dashboard.js"></script>
+  </body>
+</html>

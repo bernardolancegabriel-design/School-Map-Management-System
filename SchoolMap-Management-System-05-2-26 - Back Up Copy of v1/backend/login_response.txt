@@ -1,0 +1,11 @@
+{
+    "success": true,
+    "message": "Login successful",
+    "data": {
+        "id": "2",
+        "fullName": "Super Administrator",
+        "email": "superadmin@school.com",
+        "username": "superadmin@school.com",
+        "role": "super_admin"
+    }
+}
