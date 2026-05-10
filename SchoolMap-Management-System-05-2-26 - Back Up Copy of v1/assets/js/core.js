@@ -232,7 +232,7 @@ function navigate(page) {
 function handleLogout() {
   var modal = document.getElementById("logoutModal");
   if (modal) {
-    modal.style.display = "";
+    modal.style.display = "flex";
     return;
   }
   performLogout();
