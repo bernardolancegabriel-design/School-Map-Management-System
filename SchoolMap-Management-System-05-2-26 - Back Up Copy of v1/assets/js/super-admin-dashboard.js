@@ -306,7 +306,6 @@ function toggleAdminStatus(id, currentlyDisabled) {
   var API_BASE = typeof getApiBase === "function" ? getApiBase() : "../backend/api.php";
 
   fetch(typeof apiUrl === "function" ? apiUrl("admins", id) : API_BASE + "?action=admins&id=" + encodeURIComponent(id), {
->>>>>>> 1f2a698 (I modified admin-dashboard, some js, and php connection, also the styles, it is now appearing to the map.html)
     method: "PUT",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },

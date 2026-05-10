@@ -421,7 +421,6 @@
       return null;
     }
   }
->>>>>>> 1f2a698 (I modified admin-dashboard, some js, and php connection, also the styles, it is now appearing to the map.html)
 
   function saveRoutesLocally() {
     save(KEYS.routes, state.routes);
@@ -3271,14 +3270,7 @@
               route.points[index] = { x: pin.x, y: pin.y, floor: pin.floor };
             }
 
-          } else if (
-            !route.destinationId &&
-            index === route.points.length - 1 &&
-            pin.id !== route.originId
-          ) {
-
           } else if (!route.destinationId && index === route.points.length - 1 && String(pin.id) !== String(route.originId)) {
->>>>>>> 1f2a698 (I modified admin-dashboard, some js, and php connection, also the styles, it is now appearing to the map.html)
             if (confirm(`Set ${pin.name} as route destination?`)) {
               route.destinationId = pin.id;
               route.destination = pin.name;
