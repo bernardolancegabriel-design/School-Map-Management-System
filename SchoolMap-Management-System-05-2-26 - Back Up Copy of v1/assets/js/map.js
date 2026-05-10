@@ -5,6 +5,8 @@
 
 "use strict";
 
+const ACTIVE_FLOOR_KEY = "schoolmap_active_floor";
+
 document.addEventListener("DOMContentLoaded", function () {
   loadCurrentUser();
   initMapPage();
@@ -19,9 +21,9 @@ function initMapPage() {
   AppState.routeFrom = "";
   AppState.routeTo = "";
   AppState.showRoute = false;
-  AppState.routes = [];
-  AppState.floors = getStoredFloors().slice(0, 1);
-  AppState.currentFloor = AppState.floors[0]?.id || 1;
+  AppState.floors = getStoredFloors();
+  const activeFloor = localStorage.getItem(ACTIVE_FLOOR_KEY);
+  AppState.currentFloor = activeFloor ? JSON.parse(activeFloor) : AppState.floors[0]?.id || 1;
   AppState.locations = getStoredLocations();
   AppState.legends = getStoredLegends();
 
@@ -31,8 +33,6 @@ function initMapPage() {
   renderLegendItems();
   renderMapCanvas();
   renderPins();
-  renderRecommendations();
-  updateYouAreHere();
   updateRouteBtnState();
   setupMapInteractions();
   requestAnimationFrame(enableMapTransitions);
@@ -43,111 +43,10 @@ function initMapPage() {
   if (toSel) toSel.value = "";
 
   initGuestFlow();
-
-  // Load fresh data from DB so pins/legends/floors always reflect latest DB state
-  loadMapDataFromDB();
-}
-
-function loadMapDataFromDB() {
-  var API_BASE = "../backend/api.php";
-
-  // Fetch pins
-  fetch(API_BASE + "?action=pins", { credentials: "same-origin" })
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      var pins = (data && data.pins) ? data.pins : [];
-      if (pins.length > 0) {
-        AppState.locations = pins.map(function(pin) {
-          return {
-            id:          pin.id,
-            name:        pin.name,
-            description: pin.description || "",
-            legendId:    pin.category_id,
-            floor:       pin.map_id,
-            x:           pin.x != null ? +pin.x : 50,
-            y:           pin.y != null ? +pin.y : 50,
-            image:       pin.image || null,
-            color:       pin.category_color || null,
-          };
-        });
-        storageSet(APP_LOCATIONS_KEY, AppState.locations);
-        renderPins();
-        populateRouteSelects();
-        updateYouAreHere();
-      }
-    })
-    .catch(function(err) {
-      console.warn("Could not load pins from DB, using cached data:", err);
-    });
-
-  // Fetch floors
-  fetch(API_BASE + "?action=floors", { credentials: "same-origin" })
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      var floors = (data && data.floors) ? data.floors : [];
-      if (floors.length > 0) {
-        AppState.floors = floors.filter(function(f) { return f.status === "active"; });
-        storageSet(APP_FLOORS_KEY, AppState.floors);
-        renderFloorButtons();
-        renderMapCanvas();
-      }
-    })
-    .catch(function(err) {
-      console.warn("Could not load floors from DB:", err);
-    });
-
-  // Fetch legend categories
-  fetch(API_BASE + "?action=legends", { credentials: "same-origin" })
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      var legends = (data && data.legends) ? data.legends : [];
-      if (legends.length > 0) {
-        AppState.legends = legends.map(function(l) {
-          return {
-            id:    l.id,
-            label: l.name || l.label || "",
-            color: l.color || "#999",
-            icon:  l.icon || "",
-            type:  l.type || "",
-          };
-        });
-        storageSet(APP_LEGENDS_KEY, AppState.legends);
-        renderLegendItems();
-      }
-    })
-    .catch(function(err) {
-      console.warn("Could not load legends from DB:", err);
-    });
-
-  // Fetch routes (for waypoint-based route display)
-  fetch(API_BASE + "?action=routes", { credentials: "same-origin" })
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      var routes = (data && data.routes) ? data.routes : [];
-      AppState.routes = routes.filter(function(r) { return !r.archived; }).map(function(r) {
-        return {
-          id: r.id,
-          originId: r.originId != null ? r.originId : r.from_pin_id,
-          destinationId: r.destinationId != null ? r.destinationId : r.to_pin_id,
-          floor: r.floor || 1,
-          points: Array.isArray(r.points) ? r.points.map(function(p) {
-            return {
-              x: parseFloat(p.x) || 0,
-              y: parseFloat(p.y) || 0,
-              floor: p.floor || r.floor || 1,
-              pointOrder: p.point_order || p.pointOrder || 0,
-            };
-          }) : [],
-        };
-      });
-    })
-    .catch(function(err) {
-      console.warn("Could not load routes from DB:", err);
-    });
 }
 
 function enableMapTransitions() {
-  var zoomContainer = document.getElementById("map-zoom-container");
+  var zoomContainer = document.getElementById("mapStage");
   if (zoomContainer) zoomContainer.classList.add("map-transition-enabled");
 }
 
@@ -210,61 +109,129 @@ function saveGuestLog(guest) {
   });
   localStorage.setItem("schoolmap_logs", JSON.stringify(logs.slice(0, 50)));
 
-  // Also save to DB and capture log_id for time_out recording on logout
+  // Also save to DB
   const now = new Date();
-  const destEl = document.getElementById("guest-destination");
-  const plateEl = document.getElementById("guest-plate");
   const payload = {
     name: guest.fullName,
     purpose: guest.purpose,
-    destination: (destEl && destEl.value.trim()) || "Map",
+    destination: document.getElementById("guest-destination").value.trim() || "Map",
     category: guest.category,
     time_in: now.toTimeString().split(' ')[0],
     date: now.toISOString().split('T')[0],
-    plate_no: (plateEl && plateEl.value.trim()) || null,
+    plate_no: document.getElementById("guest-plate").value.trim() || null,
   };
 
   fetch("../backend/api.php?action=visitor_logs", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
-  })
-  .then(function(r) { return r.json(); })
-  .then(function(data) {
-    if (data && data.data && data.data.log_id) {
-      var currentUser = JSON.parse(localStorage.getItem("schoolmap_current_user") || "null");
-      if (currentUser) {
-        currentUser.logId = data.data.log_id;
-        localStorage.setItem("schoolmap_current_user", JSON.stringify(currentUser));
-        AppState.currentUser = currentUser;
-      }
-    }
-  })
-  .catch(function(err) { console.warn("Failed to save visitor log to DB:", err); });
+  }).catch(err => console.warn("Failed to save visitor log to DB:", err));
 }
 
 function saveGuestTimeOut(guest) {
-  // Update localStorage record
   let logs = JSON.parse(localStorage.getItem("schoolmap_logs") || "[]");
   const latest = logs.find((l) => l.name === guest.fullName && !l.time_out);
   if (latest) {
     latest.time_out = new Date().toISOString();
     localStorage.setItem("schoolmap_logs", JSON.stringify(logs));
   }
-
-  // Update DB record with time_out
-  if (guest.logId) {
-    var now = new Date();
-    var timeOut = now.toTimeString().split(' ')[0];
-    fetch("../backend/api.php?action=visitor_logs&id=" + encodeURIComponent(guest.logId), {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ time_out: timeOut }),
-    }).catch(function(err) { console.warn("Failed to update time_out in DB:", err); });
-  }
 }
 
 /* ====================== GUEST FLOW ====================== */
+
+function initGuestFlow() {
+  loadCurrentUser();
+
+  const isGuestMode = sessionStorage.getItem("guest_mode") === "true";
+
+  if (isGuestMode) {
+    sessionStorage.removeItem("guest_mode");
+
+    if (!AppState.currentUser || !AppState.currentUser.isGuest) {
+      showGuestLogbookModal();
+    } else {
+      renderUserArea();
+    }
+  } else {
+    renderUserArea();
+  }
+}
+
+function showGuestLogbookModal() {
+  const modal = document.getElementById("guest-logbook-modal");
+  const dateInput = document.getElementById("guest-datetime");
+
+  if (modal) modal.classList.add("active");
+
+  if (dateInput) {
+    const now = new Date();
+    dateInput.value =
+      now.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      }) +
+      " " +
+      now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  }
+}
+
+function handleGuestSubmit(e) {
+  e.preventDefault();
+
+  const name = document.getElementById("guest-name").value.trim();
+  const category = document.getElementById("guest-category").value;
+  const purpose = document.getElementById("guest-purpose").value.trim();
+
+  if (!name || !category) {
+    showToast("Please fill in all required fields.");
+    return;
+  }
+
+  const guestUser = {
+    id: "guest_" + Date.now(),
+    fullName: name,
+    role: category,
+    isGuest: true,
+    category: category,
+    purpose: purpose,
+    time_in: new Date().toISOString(),
+    loggedInAt: new Date().toISOString(),
+  };
+
+  saveCurrentUser(guestUser);
+  saveGuestLog(guestUser);
+  renderUserArea();
+
+  document.getElementById("guest-logbook-modal").classList.remove("active");
+  showToast(`Welcome, ${name}!`);
+  showEntryBanner();
+}
+
+/* ====================== LOGOUT ====================== */
+
+function handleLogout() {
+  const user = AppState.currentUser;
+  if (!user) return;
+
+  if (user.isGuest) {
+    if (confirm("Are you sure you want to log out?")) {
+      saveGuestTimeOut(user);
+      clearCurrentUser();
+      showToast("You have logged out. Thank you for visiting!");
+      setTimeout(() => {
+        window.location.href = "index.html";
+      }, 600);
+    }
+  } else {
+    // Admin logout
+    if (confirm("Are you sure you want to logout?")) {
+      clearCurrentUser();
+      renderUserArea();
+      showToast("You have been logged out.");
+    }
+  }
+}
 
 /* ====================== USER MENU ====================== */
 
@@ -375,11 +342,9 @@ function switchFloor(floorId) {
   AppState.currentFloor = floorId;
   AppState.selectedLocation = null;
   renderFloorButtons();
-  updateFloorBadge();
   renderMapCanvas();
   renderPins();
   renderRouteOverlay();
-  updateYouAreHere();
   closeSelectedPanel();
 }
 
@@ -453,8 +418,8 @@ function getStoredFloorImage(floorId) {
 /* ===== MAP CANVAS ===== */
 
 function renderMapCanvas() {
-  var container = document.getElementById("map-image-container");
-  if (!container) {
+  var img = document.getElementById("floorImage");
+  if (!img) {
     return;
   }
 
@@ -464,22 +429,11 @@ function renderMapCanvas() {
   }
 
   if (imageSrc) {
-    container.innerHTML =
-      '<img src="' +
-      escAttr(imageSrc) +
-      '" alt="Floor Plan" class="map-floor-img" draggable="false" />';
+    img.src = imageSrc;
+    img.alt = "Floor Plan";
+    img.hidden = false;
   } else {
-    container.innerHTML =
-      '<div class="map-grid-bg">' +
-      '<svg style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;opacity:0.25">' +
-      '<line x1="50%" y1="10%" x2="50%" y2="90%" stroke="#2d2d2d" stroke-width="1.5" stroke-dasharray="4 4" />' +
-      '<line x1="10%" y1="50%" x2="90%" y2="50%" stroke="#2d2d2d" stroke-width="1.5" stroke-dasharray="4 4" />' +
-      '<rect x="10%" y="10%" width="38%" height="38%" fill="none" stroke="#2d2d2d" stroke-width="1" rx="4" />' +
-      '<rect x="52%" y="10%" width="38%" height="38%" fill="none" stroke="#2d2d2d" stroke-width="1" rx="4" />' +
-      '<rect x="10%" y="52%" width="38%" height="38%" fill="none" stroke="#2d2d2d" stroke-width="1" rx="4" />' +
-      '<rect x="52%" y="52%" width="38%" height="38%" fill="none" stroke="#2d2d2d" stroke-width="1" rx="4" />' +
-      "</svg>" +
-      "</div>";
+    img.hidden = true;
   }
 
   updateFloorBadge();
@@ -487,7 +441,7 @@ function renderMapCanvas() {
 }
 
 function setupMapInteractions() {
-  var zoomContainer = document.getElementById("map-zoom-container");
+  var zoomContainer = document.getElementById("mapStage");
   if (!zoomContainer) {
     return;
   }
@@ -564,7 +518,7 @@ function setupMapInteractions() {
 /* ===== PINS ===== */
 
 function renderPins() {
-  var container = document.getElementById("map-pins");
+  var container = document.getElementById("pinsLayer");
   if (!container) {
     return;
   }
@@ -1025,17 +979,17 @@ function showRoute() {
   AppState.showRoute = true;
 
   var fromLoc = AppState.locations.find(function (l) {
-    return String(l.id) === String(AppState.routeFrom);
+    return l.id === AppState.routeFrom;
   });
   var toLoc = AppState.locations.find(function (l) {
-    return String(l.id) === String(AppState.routeTo);
+    return l.id === AppState.routeTo;
   });
 
   if (!fromLoc || !toLoc) {
     return;
   }
 
-  if (String(fromLoc.floor) !== String(AppState.currentFloor)) {
+  if (fromLoc.floor !== AppState.currentFloor) {
     switchFloor(fromLoc.floor);
   }
 
@@ -1044,7 +998,7 @@ function showRoute() {
 }
 
 function renderRouteOverlay() {
-  var svg = document.getElementById("route-svg");
+  var svg = document.getElementById("routeEditorSvg");
   if (!svg) {
     return;
   }
@@ -1054,15 +1008,19 @@ function renderRouteOverlay() {
     return;
   }
 
-  var fromLoc = AppState.locations.find(function(l) {
-    return String(l.id) === String(AppState.routeFrom);
+  var fromLoc = AppState.locations.find(function (l) {
+    return l.id === AppState.routeFrom;
   });
-  var toLoc = AppState.locations.find(function(l) {
-    return String(l.id) === String(AppState.routeTo);
+  var toLoc = AppState.locations.find(function (l) {
+    return l.id === AppState.routeTo;
   });
 
-  if (!fromLoc || !toLoc ||
-      (fromLoc.floor !== AppState.currentFloor && toLoc.floor !== AppState.currentFloor)) {
+  if (
+    !fromLoc ||
+    !toLoc ||
+    (fromLoc.floor !== AppState.currentFloor &&
+      toLoc.floor !== AppState.currentFloor)
+  ) {
     svg.style.display = "none";
     return;
   }
@@ -1073,73 +1031,10 @@ function renderRouteOverlay() {
   var fromDot = document.getElementById("route-from-dot");
   var toDot = document.getElementById("route-to-dot");
 
-  // Remove any previously added polyline
-  var oldPoly = document.getElementById("route-polyline");
-  if (oldPoly) { oldPoly.parentNode.removeChild(oldPoly); }
-
-  // Find a saved route with waypoints matching this from/to pair
-  var matchedRoute = null;
-  if (AppState.routes && AppState.routes.length) {
-    matchedRoute = AppState.routes.find(function(r) {
-      var oId = String(r.originId);
-      var dId = String(r.destinationId);
-      var fId = String(AppState.routeFrom);
-      var tId = String(AppState.routeTo);
-      return (oId === fId && dId === tId) || (oId === tId && dId === fId);
-    });
-  }
-
-  if (matchedRoute && matchedRoute.points && matchedRoute.points.length > 0) {
-    // Build ordered path for the current floor
-    var reversed = String(matchedRoute.originId) === String(AppState.routeTo);
-    var pts = matchedRoute.points
-      .filter(function(p) { return !p.floor || p.floor == AppState.currentFloor; })
-      .sort(function(a, b) { return (a.pointOrder || 0) - (b.pointOrder || 0); });
-
-    var pathParts = [];
-    if (fromLoc.floor === AppState.currentFloor) {
-      pathParts.push(fromLoc.x + "% " + fromLoc.y + "%");
-    }
-    var orderedPts = reversed ? pts.slice().reverse() : pts;
-    orderedPts.forEach(function(p) { pathParts.push(p.x + "% " + p.y + "%"); });
-    if (toLoc.floor === AppState.currentFloor) {
-      pathParts.push(toLoc.x + "% " + toLoc.y + "%");
-    }
-
-    if (pathParts.length >= 2) {
-      // Draw polyline for multi-point route, hide the straight line
-      if (routeLine) { routeLine.setAttribute("x1", "-999"); }
-      var poly = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
-      poly.id = "route-polyline";
-      poly.setAttribute("points", pathParts.join(" "));
-      poly.setAttribute("fill", "none");
-      poly.setAttribute("stroke", "#C24322");
-      poly.setAttribute("stroke-width", "3.5");
-      poly.setAttribute("stroke-dasharray", "8 4");
-      poly.setAttribute("stroke-linecap", "round");
-      poly.setAttribute("stroke-linejoin", "round");
-      svg.insertBefore(poly, svg.firstChild);
-    }
-
-    if (fromDot && fromLoc.floor === AppState.currentFloor) {
-      fromDot.setAttribute("cx", fromLoc.x + "%");
-      fromDot.setAttribute("cy", fromLoc.y + "%");
-      fromDot.style.display = "";
-    } else if (fromDot) {
-      fromDot.style.display = "none";
-    }
-    if (toDot && toLoc.floor === AppState.currentFloor) {
-      toDot.setAttribute("cx", toLoc.x + "%");
-      toDot.setAttribute("cy", toLoc.y + "%");
-      toDot.style.display = "";
-    } else if (toDot) {
-      toDot.style.display = "none";
-    }
-    return;
-  }
-
-  // Fallback: straight line between origin and destination
-  if (fromLoc.floor === AppState.currentFloor && toLoc.floor === AppState.currentFloor) {
+  if (
+    fromLoc.floor === AppState.currentFloor &&
+    toLoc.floor === AppState.currentFloor
+  ) {
     if (routeLine) {
       routeLine.setAttribute("x1", fromLoc.x + "%");
       routeLine.setAttribute("y1", fromLoc.y + "%");
@@ -1166,9 +1061,10 @@ function renderRouteOverlay() {
     if (fromDot) {
       fromDot.setAttribute("cx", fromLoc.x + "%");
       fromDot.setAttribute("cy", fromLoc.y + "%");
-      fromDot.style.display = "";
     }
-    if (toDot) { toDot.style.display = "none"; }
+    if (toDot) {
+      toDot.style.display = "none";
+    }
   }
 }
 
@@ -1207,7 +1103,7 @@ function closeRoutePanel() {
     panel.style.display = "none";
   }
   AppState.showRoute = false;
-  var svg = document.getElementById("route-svg");
+  var svg = document.getElementById("routeEditorSvg");
   if (svg) {
     svg.style.display = "none";
   }
@@ -1225,8 +1121,15 @@ function resetZoom() {
   applyZoom();
 }
 
+function restoreMap() {
+  AppState.zoom = 1;
+  AppState.panX = 0;
+  AppState.panY = 0;
+  applyZoom();
+}
+
 function applyZoom() {
-  var container = document.getElementById("map-zoom-container");
+  var container = document.getElementById("mapStage");
   if (container) {
     var x = AppState.panX || 0;
     var y = AppState.panY || 0;
@@ -1239,6 +1142,11 @@ function applyZoom() {
       AppState.zoom +
       ")";
     container.style.transformOrigin = "center center";
+  }
+  
+  var zoomLabel = document.getElementById("zoomLabel");
+  if (zoomLabel) {
+    zoomLabel.textContent = Math.round(AppState.zoom * 100) + "%";
   }
 }
 
@@ -1270,63 +1178,6 @@ function updateYouAreHere() {
   }
 }
 
-/* ===== RECOMMENDATIONS ===== */
-
-function renderRecommendations() {
-  var container = document.getElementById("rec-bar-items");
-  if (!container) {
-    return;
-  }
-
-  var colorMap = getColorMap();
-  var html = "";
-
-  RECOMMENDATIONS.forEach(function (rec) {
-    var loc = AppState.locations.find(function (l) {
-      return l.id === rec.id;
-    });
-    if (!loc) {
-      return;
-    }
-    var color = colorMap[loc.type] || "#192A57";
-    html +=
-      '<button class="rec-item" onclick="selectRecItem(\'' +
-      loc.id +
-      "')\">" +
-      '<div class="rec-dot" style="background:' +
-      color +
-      '"></div>' +
-      "<div>" +
-      '<div class="rec-name">' +
-      escHtml(loc.name) +
-      "</div>" +
-      '<div class="rec-reason">' +
-      escHtml(rec.reason) +
-      "</div>" +
-      "</div>" +
-      "</button>";
-  });
-
-  container.innerHTML =
-    html ||
-    "<span style='font-size:13px;color:#2d2d2d66'>No recommendations available</span>";
-}
-
-function selectRecItem(locId) {
-  var loc = AppState.locations.find(function (l) {
-    return l.id === locId;
-  });
-  if (!loc) {
-    return;
-  }
-  if (loc.floor !== AppState.currentFloor) {
-    switchFloor(loc.floor);
-  }
-  AppState.selectedLocation = loc;
-  showSelectedPanel(loc);
-  renderPins();
-}
-
 /* ===== SIDEBAR ===== */
 
 function toggleMapSidebar() {
@@ -1353,18 +1204,6 @@ function initGuestFlow() {
   } else {
     renderUserArea();
   }
-}
-
-var _datetimeClockInterval = null;
-
-function updateGuestDatetime() {
-  var dateInput = document.getElementById("guest-datetime");
-  if (!dateInput) return;
-  var now = new Date();
-  dateInput.value =
-    now.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) +
-    " " +
-    now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", second: "2-digit" });
 }
 
 function showGuestLogbookModal() {
@@ -1396,17 +1235,10 @@ function showGuestLogbookModal() {
 
   const form = document.getElementById("guest-logbook-form");
   form.onsubmit = handleGuestSubmit;
-
-  // Start live clock for Time & Date field
-  if (_datetimeClockInterval) clearInterval(_datetimeClockInterval);
-  updateGuestDatetime();
-  _datetimeClockInterval = setInterval(updateGuestDatetime, 1000);
 }
 
 function handleGuestSubmit(e) {
   e.preventDefault();
-
-  if (_datetimeClockInterval) { clearInterval(_datetimeClockInterval); _datetimeClockInterval = null; }
 
   const name = document.getElementById("guest-name").value.trim();
   const category = document.getElementById("guest-category").value;

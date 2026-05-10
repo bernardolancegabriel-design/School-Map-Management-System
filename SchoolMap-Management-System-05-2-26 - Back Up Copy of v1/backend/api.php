@@ -47,8 +47,8 @@
  
 define('DB_HOST',   'localhost');
 define('DB_NAME',   'school_map_db2');
-define('DB_USER',   'schoolmap_user'); // Milestone 3 — Least Privilege user
-define('DB_PASS',   'SchoolMap@Secure2025!'); // schoolmap_user password
+define('DB_USER',   'root');       // Change to schoolmap_user for Milestone 3
+define('DB_PASS',   '');           // Your MySQL root password (blank for XAMPP default)
 define('DB_CHARSET','utf8mb4');
 define('SESSION_NAME', 'schoolmap_session');
 define('APP_VERSION',  '2.0');
@@ -218,26 +218,6 @@ function ensurePinCoordinates(PDO $pdo)
     }
 }
 
-function ensureVisitorLogsTimeOut(PDO $pdo)
-{
-    static $checked = false;
-    if ($checked) { return; }
-    $checked = true;
-
-    try {
-        $stmt = $pdo->prepare(
-            "SELECT COLUMN_NAME FROM information_schema.COLUMNS " .
-            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'visitor_logs' AND COLUMN_NAME = 'time_out'"
-        );
-        $stmt->execute();
-        if (!$stmt->fetch()) {
-            $pdo->exec("ALTER TABLE visitor_logs ADD COLUMN time_out TIME NULL DEFAULT NULL");
-        }
-    } catch (PDOException $e) {
-        // Ignore schema migration failures to keep the API available.
-    }
-}
-
 function ensureDatabaseSchema(PDO $pdo)
 {
     ensurePinCoordinates($pdo);
@@ -245,7 +225,6 @@ function ensureDatabaseSchema(PDO $pdo)
     ensureAutoIncrementColumn($pdo, 'routes', 'route_id');
     ensureAutoIncrementColumn($pdo, 'route_points', 'id');
     ensureAutoIncrementColumn($pdo, 'visitor_logs', 'log_id');
-    ensureVisitorLogsTimeOut($pdo);
 }
  
 /* ============================================================
@@ -348,7 +327,6 @@ function dispatchRequest(PDO $pdo, $action, $action2, $resourceId, $method, $req
         case 'visitor_logs':
             if ($method === 'GET')      { requireAdmin(); handleGetVisitorLogs($pdo); }
             elseif ($method === 'POST') { handleCreateVisitorLog($pdo, $requestData); }
-            elseif ($method === 'PUT')  { handleUpdateVisitorLogTimeOut($pdo, $resourceId, $requestData); }
             else { jsonError(405, 'Method Not Allowed'); }
             break;
  
@@ -356,9 +334,8 @@ function dispatchRequest(PDO $pdo, $action, $action2, $resourceId, $method, $req
            AUDIT LOG
            ------------------------------------------------------- */
         case 'audit_log':
-            if ($method === 'GET')        { requireAdmin(); handleGetAuditLog($pdo); }
-            elseif ($method === 'POST')   { requireAuth();  handleCreateAuditLog($pdo, $requestData); }
-            elseif ($method === 'DELETE') { requireAdmin(); handleDeleteAuditLog($pdo); }
+            if ($method === 'GET')      { requireAdmin(); handleGetAuditLog($pdo); }
+            elseif ($method === 'POST') { requireAuth();  handleCreateAuditLog($pdo, $requestData); }
             else { jsonError(405, 'Method Not Allowed'); }
             break;
  
@@ -396,7 +373,7 @@ function handleLogin(PDO $pdo, $data)
  
     // Support login by email or by username (stored as email prefix)
     $stmt = $pdo->prepare("
-        SELECT user_id, name, email, password, role, is_disabled
+        SELECT user_id, name, email, password, role
         FROM   admin
         WHERE  email = :id1 OR email = :id2
         LIMIT  1
@@ -422,11 +399,6 @@ function handleLogin(PDO $pdo, $data)
  
     if (!$passwordValid) {
         jsonError(401, 'Invalid email/username or password.');
-    }
-
-    // Block disabled accounts from logging in
-    if ((int)($user['is_disabled'] ?? 0) === 1) {
-        jsonError(403, 'Your account has been disabled. Please contact the Super Admin.');
     }
  
     // Store session
@@ -1072,38 +1044,19 @@ function handleDeleteLegend(PDO $pdo, $id)
  
 function handleGetVisitorLogs(PDO $pdo)
 {
-    ensureVisitorLogsTimeOut($pdo);
     $stmt = $pdo->query("
         SELECT log_id, name, purpose, destination,
-               category, time_in, time_out, date, plate_no
+               category, time_in, date, plate_no
         FROM   visitor_logs
         ORDER  BY date DESC, time_in DESC
     ");
     $logs = $stmt->fetchAll();
-
+ 
     foreach ($logs as &$log) {
         $log['log_id'] = (int)$log['log_id'];
     }
-
+ 
     jsonResponse(['visitor_logs' => $logs]);
-}
-
-function handleUpdateVisitorLogTimeOut(PDO $pdo, $logId, $data)
-{
-    if (!$logId) { jsonError(400, 'Log ID is required.'); }
-    ensureVisitorLogsTimeOut($pdo);
-
-    $timeOut = sanitizeString($data['time_out'] ?? date('H:i:s'));
-
-    try {
-        $stmt = $pdo->prepare(
-            "UPDATE visitor_logs SET time_out = :time_out WHERE log_id = :log_id"
-        );
-        $stmt->execute([':time_out' => $timeOut, ':log_id' => (int)$logId]);
-        jsonSuccess('Visitor log updated with time_out.', ['log_id' => (int)$logId]);
-    } catch (PDOException $e) {
-        jsonError(400, 'Failed to update visitor log: ' . $e->getMessage());
-    }
 }
  
 function handleCreateVisitorLog(PDO $pdo, $data)
@@ -1149,8 +1102,7 @@ function handleCreateVisitorLog(PDO $pdo, $data)
 function handleGetAdmins(PDO $pdo)
 {
     $stmt = $pdo->query("
-        SELECT user_id AS id, name AS fullName, email, role,
-               is_disabled AS isDisabled, created_at
+        SELECT user_id AS id, name AS fullName, email, role, created_at
         FROM   admin
         ORDER  BY user_id ASC
     ");
@@ -1159,7 +1111,7 @@ function handleGetAdmins(PDO $pdo)
     foreach ($admins as &$admin) {
         $admin['id']         = (int)$admin['id'];
         $admin['username']   = explode('@', $admin['email'])[0];
-        $admin['isDisabled'] = (bool)$admin['isDisabled'];
+        $admin['isDisabled'] = false;
     }
 
     jsonResponse(['success' => true, 'data' => ['admins' => $admins]]);
@@ -1227,27 +1179,17 @@ function handleUpdateAdminAccount(PDO $pdo, $id, $data)
 
     if (!$id) { jsonError(400, 'Admin ID is required.'); }
 
-    $name       = sanitizeString($data['fullName'] ?? $data['name'] ?? '');
-    $role       = sanitizeString($data['role']     ?? '');
-    $isDisabled = isset($data['isDisabled']) ? (int)(bool)$data['isDisabled'] : null;
+    $name  = sanitizeString($data['fullName'] ?? $data['name'] ?? '');
+    $role  = sanitizeString($data['role']     ?? '');
 
-    if ($name || $role || $isDisabled !== null) {
+    if ($name || $role) {
         $stmt = $pdo->prepare("
             UPDATE admin
-            SET    name        = COALESCE(NULLIF(:name, ''), name),
-                   role        = COALESCE(NULLIF(:role, ''), role),
-                   is_disabled = CASE WHEN :disabled_set = 1
-                                 THEN :is_disabled
-                                 ELSE is_disabled END
+            SET    name = COALESCE(NULLIF(:name, ''), name),
+                   role = COALESCE(NULLIF(:role, ''), role)
             WHERE  user_id = :id
         ");
-        $stmt->execute([
-            ':name'         => $name,
-            ':role'         => $role,
-            ':disabled_set' => $isDisabled !== null ? 1 : 0,
-            ':is_disabled'  => $isDisabled ?? 0,
-            ':id'           => (int)$id,
-        ]);
+        $stmt->execute([':name' => $name, ':role' => $role, ':id' => (int)$id]);
     }
 
     // If password reset is requested
@@ -1360,14 +1302,4 @@ function handleGetAuditLog(PDO $pdo)
     }
  
     jsonResponse(['audit_log' => $logs]);
-}
-
-function handleDeleteAuditLog(PDO $pdo)
-{
-    try {
-        $pdo->exec("DELETE FROM audit_log");
-        jsonSuccess('Audit log cleared.');
-    } catch (PDOException $e) {
-        jsonError(400, 'Failed to clear audit log: ' . $e->getMessage());
-    }
 }
