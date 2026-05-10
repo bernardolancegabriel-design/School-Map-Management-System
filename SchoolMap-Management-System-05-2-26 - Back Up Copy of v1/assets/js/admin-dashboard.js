@@ -202,8 +202,6 @@
       },
     ],
 
-    legends: [],
-
     locations: [],
   };
 
@@ -552,68 +550,8 @@
     }
   }
 
-  async function fetchFloors() {
-    const res = await apiRequest("floors");
-    const floors = res.payload?.floors || res.payload?.data?.floors || [];
-    if (Array.isArray(floors) && floors.length) {
-      state.floors = floors.map((f) => ({
-        id: +f.id,
-        name: f.name || "",
-        label: f.label || f.name || "",
-      }));
-      state.activeFloor = state.floors[0]?.id ?? state.activeFloor;
-    }
-  }
-
-  async function fetchLegends() {
-    const res = await apiRequest("legends");
-    const legends = res.payload?.legends || res.payload?.data?.legends || [];
-    if (Array.isArray(legends) && legends.length) {
-      state.legends = legends.map((l) => ({
-        id: l.id,
-        label: l.name || l.label || l.type || "",
-        color: l.color || "#999",
-        icon: l.icon || "MapPin",
-      }));
-      state.activeLegendId = state.legends[0]?.id || state.activeLegendId;
-    }
-  }
-
-  async function fetchLocations() {
-    const res = await apiRequest("pins");
-    const pins = res.payload?.pins || res.payload?.data?.pins || [];
-    if (Array.isArray(pins)) {
-      state.locations = pins.map((pin) => ({
-        id: pin.id,
-        name: pin.name,
-        description: pin.description,
-        legendId: pin.category_id,
-        floor: pin.map_id,
-        x: pin.x || 50,
-        y: pin.y || 50,
-        image: pin.image,
-      }));
-    }
-  }
-
-  async function fetchBackendState() {
-    await Promise.all([
-      fetchFloors(),
-      fetchLegends(),
-      fetchLocations(),
-      fetchRoutes(),
-    ]);
-    save(KEYS.floors, state.floors);
-    save(KEYS.legends, state.legends);
-    save(KEYS.locations, state.locations);
-    saveRoutesLocally();
-  }
-
   const routeById = (id) => state.routes.find((r) => r.id == id);
   const destinationLocation = (id) => state.locations.find((l) => l.id == id);
-
-  const routeById = (id) => state.routes.find(r => String(r.id) === String(id));
-  const destinationLocation = (id) => state.locations.find(l => String(l.id) === String(id));
 
   const distanceBetween = (x1, y1, x2, y2) => Math.hypot(x1 - x2, y1 - y2);
   const nearestPin = (x, y, floor, threshold = 6) => {
