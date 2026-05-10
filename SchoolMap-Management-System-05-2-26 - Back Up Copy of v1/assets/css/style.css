@@ -1749,7 +1749,7 @@ a {
   justify-content: space-between;
   padding: 10px 14px;
   font-family: "Patrick Hand", sans-serif;
-  font-size: 15px;
+  font-size: 20px;
   border: 2px solid #2d2d2d;
   border-radius: 10px 3px 8px 3px / 3px 8px 3px 10px;
   background: white;
@@ -1770,7 +1770,7 @@ a {
 }
 
 .floor-btn-label {
-  font-size: 11px;
+  font-size: 20px;
   font-weight: 700;
   padding: 1px 5px;
   border-radius: 3px;
@@ -2617,93 +2617,6 @@ a {
   color: #c24322;
   font-weight: 700;
   font-size: 10px;
-}
-
-/* ===== RECOMMENDATIONS BAR map.html ===== */
-
-/* Recommendations Bar */
-.recommendations-bar {
-  flex-shrink: 0;
-  border-top: 2px solid #2d2d2d;
-  background: #fdfbf7;
-  padding: 10px 16px;
-}
-
-.rec-bar-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-}
-
-.rec-bar-title {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-family: "Kalam", cursive;
-  font-size: 14px;
-  font-weight: 700;
-  color: #192a57;
-}
-
-.rec-bar-time {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  color: rgba(45, 45, 45, 0.4);
-}
-
-.rec-bar-items {
-  display: flex;
-  gap: 12px;
-  overflow-x: auto;
-  padding-bottom: 4px;
-  scrollbar-width: none;
-}
-
-.rec-bar-items::-webkit-scrollbar {
-  display: none;
-}
-
-.rec-item {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
-  background: white;
-  border: 2px solid #2d2d2d;
-  border-radius: 10px 3px 8px 3px / 3px 8px 3px 10px;
-  box-shadow: 2px 2px 0px 0px #2d2d2d;
-  cursor: pointer;
-  transition: all 0.1s;
-}
-
-.rec-item:hover {
-  background: #f8e9d8;
-  transform: translate(1px, 1px);
-  box-shadow: 1px 1px 0px 0px #2d2d2d;
-}
-
-.rec-dot {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  border: 1px solid rgba(45, 45, 45, 0.2);
-  flex-shrink: 0;
-}
-
-.rec-name {
-  font-size: 12px;
-  font-weight: 700;
-  color: #2d2d2d;
-  white-space: nowrap;
-}
-
-.rec-reason {
-  font-size: 10px;
-  color: rgba(45, 45, 45, 0.5);
 }
 
 /* ===== ADMIN HEADER admin.html ===== */

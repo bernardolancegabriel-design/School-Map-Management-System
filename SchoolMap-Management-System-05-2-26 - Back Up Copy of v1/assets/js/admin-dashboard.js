@@ -1,12 +1,7 @@
 /* SchoolMap Admin Panel — admin-dashboard.js
    Legend-based pin system + cursor-centered scroll zoom
-
-   Data persisted via backend API */
-(async () => {
-
-  // ---------- Constants ----------
-  const API_BASE = "../backend/api.php";
-
+   Data persisted in localStorage */
+(() => {
   const KEYS = {
     floors: "schoolmap_floors",
     locations: "schoolmap_locations",
@@ -14,49 +9,6 @@
     images: "schoolmap_floor_images",
     routes: "schoolmap_routes",
   };
-
-  // ---------- API Helper ----------
-  async function apiRequest(action, method, data, id) {
-    try {
-      var url = API_BASE + "?action=" + encodeURIComponent(action);
-      if (id) {
-        url += "&id=" + encodeURIComponent(id);
-      }
-
-      var init = {
-        method: method,
-        credentials: "same-origin",
-        headers: {
-          "Content-Type": "application/json"
-        }
-      };
-
-      if (data != null && method !== "GET") {
-        init.body = JSON.stringify(data);
-      }
-
-      var response = await fetch(url, init);
-      var payload = null;
-      try {
-        payload = await response.json();
-      } catch (err) {
-        payload = null;
-      }
-
-      return {
-        ok: response.ok,
-        status: response.status,
-        payload: payload
-      };
-    } catch (err) {
-      console.warn("API request failed:", err);
-      return {
-        ok: false,
-        status: 0,
-        payload: null
-      };
-    }
-  }
 
   // Built-in SVG icons keyed by name
   const ICONS = {
@@ -153,109 +105,33 @@
   const DEFAULTS = {
     floors: [{ id: 1, name: "Ground Floor", label: "1F" }],
     // Legends replace "types" — each legend is a named category with color + icon
-
     legends: [
-      {
-        id: "lg-classroom",
-        label: "Classrooms",
-        color: "#3b82f6",
-        icon: "BookOpen",
-      },
-      {
-        id: "lg-office",
-        label: "Offices",
-        color: "#8b5cf6",
-        icon: "Briefcase",
-      },
-      {
-        id: "lg-restroom",
-        label: "Restrooms",
-        color: "#06b6d4",
-        icon: "FileText",
-      },
-      {
-        id: "lg-cafeteria",
-        label: "Cafeteria",
-        color: "#f59e0b",
-        icon: "UtensilsCrossed",
-      },
-      { id: "lg-library", label: "Library", color: "#10b981", icon: "Library" },
-      { id: "lg-gym", label: "Gymnasium", color: "#ef4444", icon: "Dumbbell" },
-      { id: "lg-admin", label: "Admin", color: "#ec4899", icon: "User" },
-      {
-        id: "lg-stairwell",
-        label: "Stairwell",
-        color: "#6b7280",
-        icon: "ArrowUpDown",
-      },
-      {
-        id: "lg-entrance",
-        label: "Entrance",
-        color: "#22c55e",
-        icon: "DoorOpen",
-      },
-      {
-        id: "lg-emergency",
-        label: "Emergency",
-        color: "#dc2626",
-        icon: "AlertTriangle",
-      },
+      { id: "lg-classroom", label: "Classrooms", color: "#3b82f6", icon: "BookOpen" },
+      { id: "lg-office",    label: "Offices",    color: "#8b5cf6", icon: "Briefcase" },
+      { id: "lg-restroom",  label: "Restrooms",  color: "#06b6d4", icon: "FileText" },
+      { id: "lg-cafeteria", label: "Cafeteria",  color: "#f59e0b", icon: "UtensilsCrossed" },
+      { id: "lg-library",   label: "Library",    color: "#10b981", icon: "Library" },
+      { id: "lg-gym",       label: "Gymnasium",  color: "#ef4444", icon: "Dumbbell" },
+      { id: "lg-admin",     label: "Admin",      color: "#ec4899", icon: "User" },
+      { id: "lg-stairwell", label: "Stairwell",  color: "#6b7280", icon: "ArrowUpDown" },
+      { id: "lg-entrance",  label: "Entrance",   color: "#22c55e", icon: "DoorOpen" },
+      { id: "lg-emergency", label: "Emergency",  color: "#dc2626", icon: "AlertTriangle" },
     ],
-
     locations: [],
   };
 
   // ---------- State ----------
-
-  const load = (k, fb) => {
-    try {
-      const v = localStorage.getItem(k);
-      return v ? JSON.parse(v) : fb;
-    } catch {
-      return fb;
-    }
-  };
+  const load = (k, fb) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fb; } catch { return fb; } };
   const save = (k, v) => localStorage.setItem(k, JSON.stringify(v));
-
-  const load = (_k, fb) => JSON.parse(JSON.stringify(fb));
-  const save = () => {};
-
 
   function normalizeRoute(route) {
     return {
-
-      ...route,
-      archived: !!route.archived,
-      name: route.name || '',
-      originId:
-        route.originId != null
-          ? +route.originId
-          : route.from_pin_id != null
-          ? +route.from_pin_id
-          : null,
-      destinationId:
-        route.destinationId != null
-          ? +route.destinationId
-          : route.to_pin_id != null
-          ? +route.to_pin_id
-          : null,
-      origin: route.origin || route.from_pin_name || '',
-      destination: route.destination || route.to_pin_name || '',
-      points: Array.isArray(route.points)
-        ? route.points.map((p) => ({
-            x: +p.x,
-            y: +p.y,
-            floor: p.floor != null ? +p.floor : route.floor,
-            pointOrder: p.pointOrder ?? p.point_order ?? p.order ?? null,
-          }))
-        : [],
-
-        id: String(route.id),
+        id: String(route.id ?? route.route_id ?? ""),
         name: route.name || '',
         originId: String(route.originId || route.from_pin_id || ""),
         destinationId: String(route.destinationId || route.to_pin_id || ""),
-        origin: route.origin || '',
-        destination: route.destination || '',
+        origin: route.origin || route.from_pin_name || '',
+        destination: route.destination || route.to_pin_name || '',
         direction: route.direction || '',
         floor: parseInt(route.floor || route.map_id || 1),
         archived: !!route.archived,
@@ -265,7 +141,6 @@
             floor: parseInt(p.floor || route.floor || 1),
             pointOrder: p.point_order || p.pointOrder || i + 1
         })) : []
-
     };
   }
 
@@ -288,12 +163,7 @@
     showGrid: false,
     showLegend: false,
     showFloorPreview: false,
-
-    edit: null, // { kind: "floor"|"pin"|"legend", isNew, draft }
-
-    hasPendingAdminChanges: false,
     edit:          null, // { kind: "floor"|"pin"|"legend", isNew, draft }
-
     routeEditor: {
       draft: null,
       selectedPointIndex: null,
@@ -358,9 +228,6 @@
   }
 
   /** Find legend by id */
-
-  const legendById = (id) => state.legends.find((l) => l.id === id);
-
   const legendById   = (id) => state.legends.find(l => String(l.id) === String(id));
   /** Colour for a pin — falls back gracefully */
   const colorForPin = (loc) => legendById(loc.legendId)?.color || "#ff4d4d";
@@ -370,19 +237,10 @@
     return ICONS[lg?.icon || "MapPin"] || ICONS.MapPin;
   };
   /** Label of the legend a pin belongs to */
-
-  const labelForPin = (loc) => legendById(loc.legendId)?.label || "Unknown";
-  const activeLegend = () =>
-    legendById(state.activeLegendId) || state.legends[0] || null;
-  const floorImageSrc = (id) =>
-    id != null
-      ? state.images[id] || (id === 1 ? "../images/map-ground-floor.png" : "")
-      : "";
-
   const labelForPin  = (loc) => legendById(loc.legendId)?.label || "Unknown";
   const activeLegend  = () => legendById(state.activeLegendId) || state.legends[0] || null;
   const floorImageSrc   = (id) => id != null ? (state.images[id] || (id === 1 ? "../images/map-ground-floor.png" : "")) : "";
-  const API_BASE = typeof getApiBase === "function" ? getApiBase() : "../backend/api.php";
+  const API_BASE = "../backend/api.php";
 
   async function apiRequest(action, method = "GET", data = null, id = null) {
     try {
@@ -541,18 +399,47 @@
     state.locations = pins.map(normalizePin);
   }
 
+  async function fetchLocations() {
+    const res = await apiRequest("pins");
+    const pins = res?.pins || res?.data?.pins || [];
+    if (Array.isArray(pins)) {
+      state.locations = pins.map((pin) => ({
+        id: String(pin.id ?? pin.pin_id),
+        name: pin.name || "Untitled",
+        description: pin.description || "",
+        legendId: String(pin.category_id ?? pin.legendId ?? ""),
+        floor: Number(pin.map_id ?? pin.floor ?? 1),
+        x: Number(pin.x ?? 50),
+        y: Number(pin.y ?? 50),
+        image: normalizeImagePath(pin.image || ""),
+      }));
+    }
+  }
+
   async function fetchRoutes() {
     const res = await apiRequest("routes");
-    const routes = res.payload?.routes || res.payload?.data?.routes || [];
+    const routes = res?.routes || res?.data?.routes || [];
     if (Array.isArray(routes)) {
       state.routes = routes.map(normalizeRoute);
       saveRoutesLocally();
     }
   }
 
-  const routeById = (id) => state.routes.find((r) => r.id == id);
-  const destinationLocation = (id) => state.locations.find((l) => l.id == id);
+  async function fetchBackendState() {
+    await Promise.all([
+      fetchFloors(),
+      fetchLegends(),
+      fetchLocations(),
+      fetchRoutes(),
+    ]);
+    save(KEYS.floors, state.floors);
+    save(KEYS.legends, state.legends);
+    save(KEYS.locations, state.locations);
+    saveRoutesLocally();
+  }
 
+  const routeById = (id) => state.routes.find(r => String(r.id) === String(id));
+  const destinationLocation = (id) => state.locations.find(l => String(l.id) === String(id));
   const distanceBetween = (x1, y1, x2, y2) => Math.hypot(x1 - x2, y1 - y2);
   const nearestPin = (x, y, floor, threshold = 6) => {
     let nearest = null;
@@ -643,7 +530,7 @@
   }
 
   function hasPendingBackWarning() {
-    return state.hasPendingAdminChanges || hasOpenUnsavedEditor();
+    return !!state.hasPendingAdminChanges || hasOpenUnsavedEditor();
   }
 
   async function saveAllAdminChanges() {
@@ -658,33 +545,43 @@
       return false;
     }
 
+    save(KEYS.floors,    state.floors);
+    save(KEYS.locations, state.locations);
+    save(KEYS.legends,   state.legends);
+    save(KEYS.images,    state.images);
+    save(KEYS.activeFloor, state.activeFloor);
+    saveRoutesLocally();
     clearAdminChangesPending();
-    showToast("All admin changes saved.");
+    showToast("All changes saved");
     return true;
   }
 
   function showAdminBackConfirm(source = "button") {
     const panel = $("#adminBackConfirm");
     if (!panel) {
-      window.location.href = "map.html";
+      confirmAdminBackToMap();
       return;
     }
+
     const title = panel.querySelector("h2");
     const message = panel.querySelector("p");
     const saveBtn = $("#adminBackSave");
+    const proceedBtn = $("#adminBackProceed");
     const actions = panel.querySelector(".admin-back-actions");
     const hasPending = hasPendingBackWarning();
 
     if (saveBtn) saveBtn.hidden = !hasPending;
+    if (proceedBtn) proceedBtn.hidden = hasPending;
     if (actions) actions.classList.toggle("has-save", hasPending);
 
     if (hasPending) {
       if (title) title.textContent = "Unsaved admin changes";
-      if (message) message.textContent = "You have changes that are not confirmed with Save All. Do you want to save all before going back to the map?";
+      if (message) message.textContent = "You have changes that are not saved yet. Save all changes before going back to the map?";
     } else {
       if (title) title.textContent = "Return to map?";
       if (message) message.textContent = "Are you sure you want to go back to the map?";
     }
+
     panel.dataset.source = source;
     panel.hidden = false;
   }
@@ -753,20 +650,9 @@
   }
 
   function wireTopBarButtons() {
-
-    bind("#saveBtn", "click", () => {
-      save(KEYS.floors, state.floors);
-      save(KEYS.locations, state.locations);
-      save(KEYS.legends, state.legends);
-      save(KEYS.images, state.images);
-      saveRoutesLocally();
-      showToast("All changes saved");
-    });
-
-    setupAdminBackGuard();
-
     bind("#saveBtn", "click", saveAllAdminChanges);
 
+    setupAdminBackGuard();
 
     bind("#resetBtn", "click", () => {
       if (!confirm("Reset all data to defaults?")) return;
@@ -784,13 +670,7 @@
     });
 
     bind("#backBtn", "click", () => {
-
-      history.length > 1
-        ? history.back()
-        : alert("This is the standalone admin panel.");
-
       showAdminBackConfirm("button");
-
     });
   }
 
@@ -937,19 +817,9 @@
     if (state.edit && state.edit.kind === "pin" && !state.edit.isNew) {
       state.edit.draft.x = x;
       state.edit.draft.y = y;
-
-      const p = state.locations.find((l) => l.id === state.edit.draft.id);
-      if (p) {
-        p.x = x;
-        p.y = y;
-      }
-      renderControlPanel();
-      renderMap();
-
-      const p = state.locations.find(l => String(l.id) === String(state.edit.draft.id));
+      const p = state.locations.find(l => l.id === state.edit.draft.id);
       if (p) { p.x = x; p.y = y; }
       renderControlPanel(); renderMap();
-
       return;
     }
 
@@ -1174,19 +1044,9 @@
   function renderLegendsList() {
     const q = state.legendSearch.trim().toLowerCase();
     const filteredLegends = q
-
-      ? state.legends.filter(
-          (lg) =>
-            lg.label.toLowerCase().includes(q) ||
-            state.locations.some(
-              (loc) =>
-                loc.legendId === lg.id && loc.name.toLowerCase().includes(q),
-            ),
-
       ? state.legends.filter(lg =>
           lg.label.toLowerCase().includes(q) ||
-          state.locations.some(loc => String(loc.legendId) === String(lg.id) && loc.name.toLowerCase().includes(q))
-
+          state.locations.some(loc => loc.legendId === lg.id && loc.name.toLowerCase().includes(q))
         )
       : state.legends;
 
@@ -1198,11 +1058,7 @@
         <span class="row-swatch" style="background:#fff;color:#2d2d2d">${ICONS[lg.icon] || ICONS.MapPin}</span>
         <div class="row-info">
           <div class="row-name">${escapeHtml(lg.label)}</div>
-
-          <div class="row-sub">${state.locations.filter((l) => l.legendId === lg.id).length} pin(s)</div>
-
-          <div class="row-sub">${state.locations.filter(l => String(l.legendId) === String(lg.id)).length} pin(s)</div>
-
+          <div class="row-sub">${state.locations.filter(l => l.legendId === lg.id).length} pin(s)</div>
         </div>
         <button class="icon-btn" data-edit-legend="${lg.id}">${ICONS_SM.pencil}</button>
         <button class="icon-btn danger" data-delete-legend="${lg.id}">${ICONS_SM.trash}</button>
@@ -1243,25 +1099,11 @@
       ? locations.filter((loc) => loc.name.toLowerCase().includes(qLocation))
       : locations;
 
-
-    const pinRows = filteredLocations
-      .map((loc) => {
-        const activeCount = state.routes.filter(
-          (r) => r.originId === loc.id && !r.archived,
-        ).length;
-        const archivedCount = state.routes.filter(
-          (r) => r.originId === loc.id && r.archived,
-        ).length;
-        const selectedClass =
-          state.routeEditor.originFilter == loc.id ? "selected" : "";
-        return `
-
     const pinRows = filteredLocations.map(loc => {
-      const activeCount = state.routes.filter(r => String(r.originId) === String(loc.id) && !r.archived).length;
-      const archivedCount = state.routes.filter(r => String(r.originId) === String(loc.id) && r.archived).length;
-      const selectedClass = String(state.routeEditor.originFilter) === String(loc.id) ? 'selected' : '';
+      const activeCount = state.routes.filter(r => r.originId === loc.id && !r.archived).length;
+      const archivedCount = state.routes.filter(r => r.originId === loc.id && r.archived).length;
+      const selectedClass = state.routeEditor.originFilter === loc.id ? 'selected' : '';
       return `
-
         <div class="row route-location-row ${selectedClass}" data-route-origin="${loc.id}">
           <div>
             <span class="row-name">${escapeHtml(loc.name)}</span>
@@ -1345,17 +1187,9 @@
   function renderRouteEditorPanel() {
     const routeDraft = state.routeEditor.draft;
     const isExisting = Boolean(routeById(routeDraft.id));
-    const pinOptions = state.locations
-      .map(
-        (loc) =>
-          `<option value="${loc.id}" ${loc.id === routeDraft.originId || loc.id === routeDraft.destinationId ? "selected" : ""}>${escapeHtml(loc.name)} (F${loc.floor})</option>`,
-      )
-      .join("");
-
     const pinOptions = state.locations.map(loc =>
-      `<option value="${loc.id}" ${String(loc.id) === String(routeDraft.originId) || String(loc.id) === String(routeDraft.destinationId) ? 'selected' : ''}>${escapeHtml(loc.name)} (F${loc.floor})</option>`
+      `<option value="${loc.id}" ${loc.id === routeDraft.originId || loc.id === routeDraft.destinationId ? 'selected' : ''}>${escapeHtml(loc.name)} (F${loc.floor})</option>`
     ).join('');
-
 
     const originLocation = destinationLocation(routeDraft.originId);
     const destinationLocationLabel = destinationLocation(
@@ -1515,18 +1349,9 @@
       `;
     } else if (e.kind === "pin") {
       // Build legend options
-
-      const legendOptions = state.legends
-        .map(
-          (lg) =>
-            `<option value="${lg.id}" ${lg.id === e.draft.legendId ? "selected" : ""}>${escapeHtml(lg.label)}</option>`,
-        )
-        .join("");
-
       const legendOptions = state.legends.map(lg =>
-        `<option value="${lg.id}" ${String(lg.id) === String(e.draft.legendId) ? "selected" : ""}>${escapeHtml(lg.label)}</option>`
+        `<option value="${lg.id}" ${lg.id === e.draft.legendId ? "selected" : ""}>${escapeHtml(lg.label)}</option>`
       ).join("");
-
 
       // Floor options
       const floorOptions = state.floors
@@ -1635,11 +1460,7 @@
     // Pins
     body.querySelectorAll("[data-pin-id]").forEach((el) => {
       el.addEventListener("click", () => {
-
-        const p = state.locations.find((l) => l.id == el.dataset.pinId);
-
-        const p = state.locations.find(l => String(l.id) === String(el.dataset.pinId));
-
+        const p = state.locations.find(l => l.id === el.dataset.pinId);
         if (!p) return;
         state.selectedPinId = p.id;
         state.mode = "default";
@@ -1650,11 +1471,7 @@
     body.querySelectorAll("[data-edit-pin]").forEach((el) => {
       el.addEventListener("click", (e) => {
         e.stopPropagation();
-
-        const p = state.locations.find((l) => l.id == el.dataset.editPin);
-
-        const p = state.locations.find(l => String(l.id) === String(el.dataset.editPin));
-
+        const p = state.locations.find(l => l.id === el.dataset.editPin);
         if (!p) return;
         state.mode = "default";
         state.edit = { kind: "pin", isNew: false, draft: { ...p } };
@@ -1672,11 +1489,7 @@
     // Legends — click row to edit, edit / delete buttons
     body.querySelectorAll("[data-legend-id]").forEach((el) => {
       el.addEventListener("click", () => {
-
-        const lg = state.legends.find((x) => x.id === el.dataset.legendId);
-
-        const lg = state.legends.find(x => String(x.id) === String(el.dataset.legendId));
-
+        const lg = state.legends.find(x => x.id === el.dataset.legendId);
         if (!lg) return;
         state.mode = "default";
         state.activeLegendId = lg.id;
@@ -1686,11 +1499,7 @@
     body.querySelectorAll("[data-edit-legend]").forEach((el) => {
       el.addEventListener("click", (e) => {
         e.stopPropagation();
-<
-        const lg = state.legends.find((x) => x.id === el.dataset.editLegend);
-
-        const lg = state.legends.find(x => String(x.id) === String(el.dataset.editLegend));
-
+        const lg = state.legends.find(x => x.id === el.dataset.editLegend);
         if (!lg) return;
         state.mode = "default";
         state.edit = {
@@ -2241,111 +2050,6 @@
   }
 
   // ---------- SAVE EDIT ----------
-
-  async function syncFloorToBackend(floor, isNew) {
-    const payload = { name: floor.name, label: floor.label };
-    const res = await apiRequest(
-      "floors",
-      isNew ? "POST" : "PUT",
-      payload,
-      isNew ? null : floor.id,
-    );
-    if (!res.payload?.success || !res.payload?.data) return;
-    const result = res.payload.data;
-    if (isNew && result.id != null) {
-      const originalId = floor.id;
-      const newId = +result.id;
-      state.floors = state.floors.map((f) =>
-        f.id === originalId ? { ...f, id: newId } : f,
-      );
-      if (state.activeFloor === originalId) state.activeFloor = newId;
-      if (state.images[originalId] !== undefined) {
-        state.images[newId] = state.images[originalId];
-        delete state.images[originalId];
-      }
-      state.locations = state.locations.map((loc) =>
-        loc.floor === originalId ? { ...loc, floor: newId } : loc,
-      );
-    } else if (!isNew) {
-      state.floors = state.floors.map((f) =>
-        f.id === floor.id
-          ? {
-              ...f,
-              name: result.name || floor.name,
-              label: result.label || floor.label,
-            }
-          : f,
-      );
-    }
-  }
-
-  async function syncLegendToBackend(legend, isNew) {
-    const payload = {
-      name: legend.label,
-      color: legend.color,
-      icon: legend.icon,
-    };
-    const res = await apiRequest(
-      "legends",
-      isNew ? "POST" : "PUT",
-      payload,
-      isNew ? null : legend.id,
-    );
-    if (!res.payload?.success || !res.payload?.data) return;
-    const result = res.payload.data;
-    if (isNew && result.id != null) {
-      const originalId = legend.id;
-      const newId = result.id;
-      state.legends = state.legends.map((l) =>
-        l.id === originalId ? { ...l, id: newId } : l,
-      );
-      if (state.activeLegendId === originalId) state.activeLegendId = newId;
-      state.locations = state.locations.map((loc) =>
-        loc.legendId === originalId ? { ...loc, legendId: newId } : loc,
-      );
-    } else if (!isNew) {
-      state.legends = state.legends.map((l) =>
-        l.id === legend.id
-          ? {
-              ...l,
-              label: result.label || legend.label,
-              color: result.color || legend.color,
-              icon: result.icon || legend.icon,
-            }
-          : l,
-      );
-    }
-  }
-
-  async function syncPinToBackend(location, isNew) {
-    const payload = {
-      name: location.name,
-      description: location.description,
-      category_id: location.legendId,
-      map_id: location.floor,
-      image: location.image,
-      x: location.x,
-      y: location.y,
-    };
-    const res = await apiRequest(
-      "pins",
-      isNew ? "POST" : "PUT",
-      payload,
-      isNew ? null : location.id,
-    );
-    if (!res.payload?.success || !res.payload?.data) return;
-    const result = res.payload.data;
-    if (isNew && result.new_pin_id != null) {
-      const originalId = location.id;
-      const newId = +result.new_pin_id;
-      state.locations = state.locations.map((loc) =>
-        loc.id === originalId ? { ...loc, id: newId } : loc,
-      );
-      if (state.selectedPinId === originalId) state.selectedPinId = newId;
-    }
-  }
-
-
   async function saveEdit() {
     const e = state.edit;
     if (!e) return;
@@ -2362,11 +2066,7 @@
       if (!res || res.error) { showToast(res?.message || "Could not save floor"); return; }
       if (e.isNew && res.data?.id) draft.id = Number(res.data.id);
       if (e.isNew) state.floors.push(draft);
-
-      else
-        state.floors = state.floors.map((f) => (f.id === draft.id ? draft : f));
-
-      else         state.floors = state.floors.map(f => String(f.id) === String(draft.id) ? draft : f);
+      else         state.floors = state.floors.map(f => f.id === draft.id ? draft : f);
 
       if (d.image) state.images[d.id] = d.image;
       else if (d.id === 1)
@@ -2374,42 +2074,26 @@
       else delete state.images[d.id];
 
       if (state.activeFloor == null) state.activeFloor = draft.id;
-
-      await syncFloorToBackend(draft, e.isNew);
-
-      markAdminChangesPending();
-
       showToast(e.isNew ? "Floor added" : "Floor updated");
     } else if (e.kind === "pin") {
       const d = e.draft;
+      const originalId = d.id;
       const draft = {
         ...d,
         name: (d.name || "").trim() || "Untitled",
         x: clamp(d.x, 0, 100),
         y: clamp(d.y, 0, 100),
       };
-
-      const exists = state.locations.find((p) => p.id === draft.id);
-      if (e.isNew && !exists) state.locations.push(draft);
-      else
-        state.locations = state.locations.map((p) =>
-          p.id === draft.id ? draft : p,
-        );
-      state.selectedPinId = draft.id;
-      await syncPinToBackend(draft, e.isNew);
-
-      const oldId = draft.id;
-      const exists = state.locations.find(p => String(p.id) === String(oldId));
-      const method = e.isNew || !exists ? "POST" : "PUT";
+      const method = e.isNew || String(draft.id).startsWith("loc-") ? "POST" : "PUT";
       const res = await apiRequest("pins", method, pinPayload(draft), method === "POST" ? null : draft.id);
       if (!res || res.error) { showToast(res?.message || "Could not save pin"); return; }
-      if (method === "POST" && res.data?.id) draft.id = String(res.data.id);
-      if (res.data?.image) draft.image = res.data.image;
-      if (method === "POST" && !exists) state.locations.push(draft);
-      else                              state.locations = state.locations.map(p => String(p.id) === String(oldId) ? draft : p);
+      if (method === "POST" && res.data?.id) {
+        draft.id = String(res.data.id);
+      }
+      const exists = state.locations.find(p => String(p.id) === String(originalId) || String(p.id) === String(draft.id));
+      if (e.isNew && !exists) state.locations.push(draft);
+      else                    state.locations = state.locations.map(p => String(p.id) === String(originalId) || String(p.id) === String(draft.id) ? draft : p);
       state.selectedPinId = draft.id;
-      markAdminChangesPending();
-
       showToast(e.isNew ? "Pin added" : "Pin updated");
     } else if (e.kind === "legend") {
       const d = e.draft;
@@ -2419,24 +2103,15 @@
         color: d.color,
         icon: (d.icon || "").trim() || "MapPin",
       };
-
-      const exists = state.legends.find((l) => l.id === draft.id);
-      if (e.isNew && !exists) state.legends.push(draft);
-      else
-        state.legends = state.legends.map((l) =>
-          l.id === draft.id ? draft : l,
-        );
-      await syncLegendToBackend(draft, e.isNew);
-
-      const exists = state.legends.find(l => String(l.id) === String(draft.id));
-      const method = e.isNew || !exists ? "POST" : "PUT";
+      const method = e.isNew || String(draft.id).startsWith("lg-") ? "POST" : "PUT";
       const res = await apiRequest("legends", method, legendPayload(draft), method === "POST" ? null : draft.id);
       if (!res || res.error) { showToast(res?.message || "Could not save legend"); return; }
-      if (method === "POST" && res.data?.id) draft.id = Number(res.data.id);
-      if (method === "POST" && !exists) state.legends.push(draft);
-      else                              state.legends = state.legends.map(l => String(l.id) === String(draft.id) ? draft : l);
-      markAdminChangesPending();
-
+      if (method === "POST" && res.data?.id) {
+        draft.id = Number(res.data.id);
+      }
+      const exists = state.legends.find(l => l.id === draft.id);
+      if (e.isNew && !exists) state.legends.push(draft);
+      else                    state.legends = state.legends.map(l => l.id === draft.id ? draft : l);
       showToast(e.isNew ? "Legend added" : "Legend updated");
     }
 
@@ -2446,6 +2121,7 @@
                         : e.kind === "floor" ? "floors"
                         : e.kind === "legend" ? "legends"
                         : state.activeSection;
+    markAdminChangesPending();
     renderAll();
   }
 
@@ -2475,23 +2151,13 @@
       payload,
       isNew ? null : route.id,
     );
-    const routeData = res.payload?.data?.route || res.payload?.data || res.payload?.route;
-    if (res.payload && res.payload.success && routeData) {
+    const routeData = res?.data?.route || res?.data || res?.route;
+    if (res && res.success && routeData) {
       const updated = normalizeRoute(routeData);
       if (isNew) {
-
-        state.routes = state.routes.map((r) =>
-          r.id === route.id ? updated : r,
-        );
+        state.routes = state.routes.map(r => r.id === route.id ? updated : r);
       } else {
-        state.routes = state.routes.map((r) =>
-          r.id === updated.id ? updated : r,
-        );
-
-        state.routes = state.routes.map(r => String(r.id) === String(route.id) ? updated : r);
-      } else {
-        state.routes = state.routes.map(r => String(r.id) === String(updated.id) ? updated : r);
-
+        state.routes = state.routes.map(r => r.id === updated.id ? updated : r);
       }
       saveRoutesLocally();
       renderAll();
@@ -2526,13 +2192,7 @@
 
     const existing = routeById(route.id);
     if (existing) {
-
-      state.routes = state.routes.map((r) =>
-        r.id === route.id ? { ...route } : r,
-      );
-
-      state.routes = state.routes.map(r => String(r.id) === String(route.id) ? { ...route } : r);
-
+      state.routes = state.routes.map(r => r.id === route.id ? { ...route } : r);
     } else {
       state.routes.push({ ...route });
     }
@@ -2542,12 +2202,7 @@
     state.routeEditor.draft = null;
     state.routeEditor.selectedPointIndex = null;
     state.routeEditor.originLocked = false;
-
-    // Go back to routes list after saving
-    state.activeSection = "routes";
-
     markAdminChangesPending();
-
     renderAll();
     showToast(existing ? "Route updated" : "Route saved");
   }
@@ -2556,12 +2211,7 @@
     const route = routeById(routeId);
     if (!route) return;
     route.archived = !route.archived;
-
-    state.routes = state.routes.map((r) =>
-      r.id === route.id ? { ...route } : r,
-    );
-    state.routes = state.routes.map(r => String(r.id) === String(route.id) ? { ...route } : r);
-
+    state.routes = state.routes.map(r => r.id === route.id ? { ...route } : r);
     saveRoutesLocally();
     syncRouteToBackend(route, false);
     markAdminChangesPending();
@@ -2570,27 +2220,13 @@
   }
 
   function archiveOriginRoutes(originId) {
-
-    const routes = state.routes.filter(
-      (r) => r.originId === originId && !r.archived,
-    );
-
-    const routes = state.routes.filter(r => String(r.originId) === String(originId) && !r.archived);
+    const routes = state.routes.filter(r => r.originId === originId && !r.archived);
     if (!routes.length) {
       showToast("No active routes found for this location");
       return;
     }
-
-    routes.forEach((r) => {
-      r.archived = true;
-    });
-    state.routes = state.routes.map((r) =>
-      routes.some((a) => a.id === r.id) ? { ...r, archived: true } : r,
-    );
-
     routes.forEach(r => { r.archived = true; });
-    state.routes = state.routes.map(r => routes.some(a => String(a.id) === String(r.id)) ? { ...r, archived: true } : r);
-
+    state.routes = state.routes.map(r => routes.some(a => a.id === r.id) ? { ...r, archived: true } : r);
     saveRoutesLocally();
     markAdminChangesPending();
     renderAll();
@@ -2598,40 +2234,20 @@
   }
 
   function deleteRoute(id) {
-
-    if (!confirm("Delete this route?")) return;
-    state.routes = state.routes.filter((r) => r.id !== id);
-    if (state.routeEditor.draft?.id === id) {
-
     if (!confirm('Delete this route?')) return;
-    state.routes = state.routes.filter(r => String(r.id) !== String(id));
-    if (String(state.routeEditor.draft?.id) === String(id)) {
-
+    state.routes = state.routes.filter(r => r.id !== id);
+    if (state.routeEditor.draft?.id === id) {
       state.routeEditor.draft = null;
       state.routeEditor.selectedPointIndex = null;
     }
     saveRoutesLocally();
-
-    apiRequest("routes", "DELETE", null, id);
-
     apiRequest('routes', 'DELETE', null, id);
     markAdminChangesPending();
-
     renderAll();
     showToast("Route deleted");
   }
 
   // ---------- DELETE ----------
-
-  function deleteFloor(id) {
-    if (state.floors.length <= 1) {
-      showToast("Keep at least one floor");
-      return;
-    }
-    if (!confirm("Delete this floor and its pins?")) return;
-    state.floors = state.floors.filter((f) => f.id !== id);
-    state.locations = state.locations.filter((l) => l.floor !== id);
-
   async function deleteFloor(id) {
     if (state.floors.length <= 1) { showToast("Keep at least one floor"); return; }
     if (!confirm("Delete this floor and its pins?")) return;
@@ -2639,142 +2255,52 @@
     if (!res || res.error) { showToast(res?.message || "Could not delete floor"); return; }
     state.floors    = state.floors.filter(f => f.id !== id);
     state.locations = state.locations.filter(l => l.floor !== id);
-
     delete state.images[id];
     if (state.activeFloor === id)
       state.activeFloor = state.floors[0]?.id ?? null;
     state.edit = null;
-
-    apiRequest("floors", "DELETE", null, id);
-
     markAdminChangesPending();
-
     renderAll();
     showToast("Floor deleted");
   }
 
-
-  function deletePin(id) {
-    if (!confirm("Delete this pin?")) return;
-    state.locations = state.locations.filter((l) => l.id != id);
-    if (state.selectedPinId == id) state.selectedPinId = null;
-    state.edit = null;
-    apiRequest("pins", "DELETE", null, id);
-
   async function deletePin(id) {
-    const pin = state.locations.find(l => String(l.id) === String(id));
-    const pinName = pin?.name || `Pin #${id}`;
-    const linkedRoutes = state.routes.filter(r =>
-      String(r.originId) === String(id) || String(r.destinationId) === String(id)
-    ).length;
-    const confirmMessage = linkedRoutes > 0
-      ? `Delete "${pinName}" permanently from the database?\n\nThis will also delete ${linkedRoutes} linked route(s). This cannot be undone.`
-      : `Delete "${pinName}" permanently from the database?\n\nThis cannot be undone.`;
-
-    if (!confirm(confirmMessage)) {
-      showToast("Pin deletion cancelled");
-      return;
-    }
-
-    if (String(id).startsWith("loc-")) {
-      state.locations = state.locations.filter(l => String(l.id) !== String(id));
-      if (String(state.selectedPinId) === String(id)) state.selectedPinId = null;
-      state.edit = null;
-      markAdminChangesPending();
-      renderAll();
-      showToast("Unsaved pin removed");
-      return;
-    }
-
-    showToast("Deleting pin...");
-    const res = await apiRequest("pins", "DELETE", null, id);
-    if (!res || res.error) {
-      const message = res?.message || "Could not delete pin";
-      showToast(message);
-      alert(message);
-      return;
-    }
-
-    state.locations = state.locations.filter(l => String(l.id) !== String(id));
-    state.routes = state.routes.filter(r =>
-      String(r.originId) !== String(id) && String(r.destinationId) !== String(id)
-    );
-    if (String(state.selectedPinId) === String(id)) state.selectedPinId = null;
-    if (String(state.routeEditor.draft?.originId) === String(id) || String(state.routeEditor.draft?.destinationId) === String(id)) {
-      state.routeEditor.draft = null;
-      state.routeEditor.selectedPointIndex = null;
-    }
+    if (!confirm("Delete this pin?")) return;
+    const res = String(id).startsWith("loc-") ? { success: true } : await apiRequest("pins", "DELETE", null, id);
+    if (!res || res.error) { showToast(res?.message || "Could not delete pin"); return; }
+    state.locations = state.locations.filter(l => l.id !== id);
+    if (state.selectedPinId === id) state.selectedPinId = null;
     state.edit = null;
-    await Promise.allSettled([fetchPins(), fetchRoutes()]);
-
-    const stillExists = state.locations.some(l => String(l.id) === String(id));
-    if (stillExists) {
-      const message = `"${pinName}" was not removed from the database. Please try again.`;
-      renderAll();
-      showToast(message);
-      alert(message);
-      return;
-    }
-
-
-    renderAll();
     markAdminChangesPending();
-    const deletedRoutes = Number(res.data?.deleted_routes || 0);
-    showToast(deletedRoutes > 0 ? `"${pinName}" deleted with ${deletedRoutes} linked route(s)` : `"${pinName}" deleted from database`);
+    renderAll();
+    showToast("Pin deleted");
   }
-
-
-  function deleteLegend(id) {
-    const usedBy = state.locations.filter((l) => l.legendId === id).length;
-    if (
-      usedBy > 0 &&
-      !confirm(`This legend is used by ${usedBy} pin(s). Delete anyway?`)
-    )
-      return;
-    else if (usedBy === 0 && !confirm("Delete this legend?")) return;
-    state.legends = state.legends.filter((l) => l.id !== id);
-    if (state.activeLegendId === id) {
-      state.activeLegendId = state.legends[0]?.id || null;
-    }
-    // Pins that referenced this legend lose their legendId
-    state.locations = state.locations.map((l) =>
-      l.legendId === id ? { ...l, legendId: state.legends[0]?.id || "" } : l,
-    );
-    state.edit = null;
-    apiRequest("legends", "DELETE", null, id);
 
   async function deleteLegend(id) {
     const usedBy = state.locations.filter(l => String(l.legendId) === String(id)).length;
     if (usedBy > 0 && !confirm(`This legend is used by ${usedBy} pin(s). Delete anyway?`)) return;
     else if (usedBy === 0 && !confirm("Delete this legend?")) return;
-    const res = await apiRequest("legends", "DELETE", null, id);
+    const res = String(id).startsWith("lg-") ? { success: true } : await apiRequest("legends", "DELETE", null, id);
     if (!res || res.error) { showToast(res?.message || "Could not delete legend"); return; }
-    state.legends = state.legends.filter(l => String(l.id) !== String(id));
-    if (String(state.activeLegendId) === String(id)) {
+    state.legends = state.legends.filter(l => l.id !== id);
+    if (state.activeLegendId === id) {
       state.activeLegendId = state.legends[0]?.id || null;
     }
     // Pins that referenced this legend lose their legendId
     state.locations = state.locations.map(l =>
-      String(l.legendId) === String(id) ? { ...l, legendId: state.legends[0]?.id || "" } : l
+      l.legendId === id ? { ...l, legendId: state.legends[0]?.id || "" } : l
     );
     state.edit = null;
     markAdminChangesPending();
-
     renderAll();
     showToast("Legend deleted");
   }
 
   // ---------- MAP RENDER ----------
   function renderMap() {
-
-    const f = state.floors.find((x) => x.id === state.activeFloor);
-    $("#floorTag").textContent = f?.label || "—";
-    $("#floorName").textContent = f?.name || "No floor selected";
-
-    const f = state.floors.find(x => String(x.id) === String(state.activeFloor));
+    const f = state.floors.find(x => x.id === state.activeFloor);
     $("#floorTag").textContent  = f?.label || "—";
     $("#floorName").textContent = f?.name  || "No floor selected";
-
 
     // Floor switch chips
     const sw = $("#floorSwitch");
@@ -2864,13 +2390,8 @@
     layer.innerHTML = "";
     if (state.activeFloor != null) {
       state.locations
-
-        .filter((l) => l.floor === state.activeFloor)
-        .forEach((loc) => renderPin(loc, layer));
-
-        .filter(l => String(l.floor) === String(state.activeFloor))
+        .filter(l => l.floor === state.activeFloor)
         .forEach(loc => renderPin(loc, layer));
-
     }
 
     renderRouteOverlay();
@@ -3207,8 +2728,7 @@
               route.floor = pin.floor;
               route.points[index] = { x: pin.x, y: pin.y, floor: pin.floor };
             }
-
-          } else if (!route.destinationId && index === route.points.length - 1 && String(pin.id) !== String(route.originId)) {
+          } else if (!route.destinationId && index === route.points.length - 1 && pin.id !== route.originId) {
             if (confirm(`Set ${pin.name} as route destination?`)) {
               route.destinationId = pin.id;
               route.destination = pin.name;
@@ -3225,16 +2745,9 @@
   }
 
   function renderPin(loc, layer) {
-
     const pinData = state.edit?.draft?.id === loc.id ? state.edit.draft : loc;
-    const el = document.createElement("div");
-    const sel =
-      state.selectedPinId === loc.id || state.edit?.draft?.id === loc.id;
-
-    const pinData = String(state.edit?.draft?.id) === String(loc.id) ? state.edit.draft : loc;
     const el  = document.createElement("div");
-    const sel = String(state.selectedPinId) === String(loc.id) || String(state.edit?.draft?.id) === String(loc.id);
-
+    const sel = state.selectedPinId === loc.id || state.edit?.draft?.id === loc.id;
     el.className = "pin draggable" + (sel ? " selected" : "");
     el.style.left = pinData.x + "%";
     el.style.top = pinData.y + "%";
@@ -3341,16 +2854,8 @@
       const x = clamp(((ev.clientX - r.left) / r.width) * 100, 0, 100);
       const y = clamp(((ev.clientY - r.top) / r.height) * 100, 0, 100);
 
-
-      const p = state.locations.find((l) => l.id === loc.id);
-      if (p) {
-        p.x = x;
-        p.y = y;
-      }
-=======
       const p = state.locations.find(l => String(l.id) === String(loc.id));
       if (p) { p.x = x; p.y = y; }
-
 
       if (String(state.edit?.draft?.id) === String(loc.id)) {
         state.edit.draft.x = x;
@@ -3369,25 +2874,17 @@
       const pinEl = document.querySelector(`.pin[data-id="${loc.id}"]`);
       if (pinEl) pinEl.classList.remove("dragging");
       document.body.style.cursor = "default";
-
-      if (!dragging) {
-        state.selectedPinId = loc.id;
-        renderAll();
-      }
-      setTimeout(() => {
-        isDraggingPin = false;
-      }, 0);
-
       if (!dragging) { state.selectedPinId = loc.id; renderAll(); }
       if (dragging) {
         const updated = state.locations.find(l => String(l.id) === String(loc.id));
         if (updated) {
           markAdminChangesPending();
-          apiRequest("pins", "PUT", pinPayload(updated), updated.id);
+          if (!String(updated.id).startsWith("loc-")) {
+            apiRequest("pins", "PUT", pinPayload(updated), updated.id);
+          }
         }
       }
       setTimeout(() => { isDraggingPin = false; }, 0);
-
     };
 
     document.addEventListener("mousemove", onMove);
@@ -3427,54 +2924,6 @@
   // ---------- Init ----------
   wirePreviewPanel();
   wireSectionTabs();
-
   renderAll();
   fetchBackendState().then(() => renderAll());
 })();
-
-
-  // Improved Initialization
-  async function initializeApp() {
-      try {
-          // Load data from backend first
-          await Promise.allSettled([
-              fetchRoutes(),
-              fetchFloors?.() || Promise.resolve(),   // optional chaining kung wala pa
-              fetchPins?.()   || Promise.resolve(),
-              fetchLegends?.()|| Promise.resolve()
-          ]);
-
-          // Ensure we have at least one active floor
-          if (!state.activeFloor && state.floors.length > 0) {
-              state.activeFloor = state.floors[0].id;
-          }
-
-          if (!state.activeLegendId && state.legends.length > 0) {
-              state.activeLegendId = state.legends[0].id;
-          }
-
-          state.activeSection = state.activeSection || "floors";
-
-          renderAll();
-
-          // Extra safety render after a short delay
-          setTimeout(() => {
-              renderControlPanel();
-              if (state.activeSection === "routes") renderRouteOverlay();
-          }, 300);
-
-          console.log("✅ SchoolMap Admin Panel initialized successfully");
-      } catch (err) {
-          console.error("Init failed:", err);
-          renderAll(); // fallback render
-      }
-  }
-
-  // Run initialization
-  if (document.readyState === "loading") {
-      document.addEventListener("DOMContentLoaded", initializeApp);
-  } else {
-      initializeApp();
-  }
-})();
-

@@ -43,17 +43,17 @@
  
 /* ============================================================
    CONFIGURATION — update DB credentials if needed
-   ============================================================ */
- 
-define('DB_HOST',   'localhost');
-define('DB_NAME',   'school_map_db2');
-define('DB_USER',   'schoolmap_user'); // Milestone 3 — Least Privilege user
-define('DB_PASS',   'SchoolMap@Secure2025!'); // schoolmap_user password
-define('DB_CHARSET','utf8mb4');
+============================================================ */
+define('DB_HOST',    'localhost');
+define('DB_NAME',    'school_map_db2');
+define('DB_USER',    'root');
+define('DB_PASS',    '');
+define('DB_CHARSET', 'utf8mb4');
 define('SESSION_NAME', 'schoolmap_session');
 define('APP_VERSION',  '2.0');
- 
+   
 /* ============================================================
+
    BOOTSTRAP
    ============================================================ */
  
@@ -120,14 +120,14 @@ function setAdminSession(PDO $pdo)
    RESPONSE HELPERS
    ============================================================ */
  
-function jsonResponse($data, $statusCode = 200)
+function jsonResponse(array $data, int $statusCode = 200)
 {
     http_response_code($statusCode);
     echo json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
     exit;
 }
  
-function jsonError($statusCode, $message, $details = null)
+function jsonError(int $statusCode, string $message, ?array $details = null)
 {
     $response = ['error' => true, 'message' => $message];
     if ($details !== null) { $response['details'] = $details; }
@@ -136,7 +136,7 @@ function jsonError($statusCode, $message, $details = null)
     exit;
 }
  
-function jsonSuccess($message = 'Success', $data = null)
+function jsonSuccess(string $message = 'Success', ?array $data = null)
 {
     $response = ['success' => true, 'message' => $message];
     if ($data !== null) { $response['data'] = $data; }
@@ -159,12 +159,12 @@ function requireAdmin()
     }
 }
  
-function sanitizeString($value)
+function sanitizeString(string $value)
 {
     return htmlspecialchars(strip_tags(trim((string)$value)), ENT_QUOTES, 'UTF-8');
 }
 
-function saveBase64Image($base64Data)
+function saveBase64Image(string $base64Data)
 {
     if (empty($base64Data) || !preg_match('/^data:image\/(png|jpeg|jpg|gif|webp);base64,/i', $base64Data)) {
         return '';
@@ -207,7 +207,7 @@ function saveBase64Image($base64Data)
     }
 }
 
-function ensureAutoIncrementColumn(PDO $pdo, $table, $column)
+function ensureAutoIncrementColumn(PDO $pdo, string $table, string $column)
 {
     static $checked = [];
     $key = "{$table}.{$column}";
@@ -307,10 +307,31 @@ function ensureVisitorLogsTimeOut(PDO $pdo)
     }
 }
 
+function ensureAdminDisabledColumn(PDO $pdo)
+{
+    static $checked = false;
+    if ($checked) { return; }
+    $checked = true;
+
+    try {
+        $stmt = $pdo->prepare(
+            "SELECT COLUMN_NAME FROM information_schema.COLUMNS " .
+            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'admin' AND COLUMN_NAME = 'is_disabled'"
+        );
+        $stmt->execute();
+        if (!$stmt->fetch()) {
+            $pdo->exec("ALTER TABLE admin ADD COLUMN is_disabled TINYINT(1) NOT NULL DEFAULT 0");
+        }
+    } catch (PDOException $e) {
+        // Ignore schema migration failures to keep the API available.
+    }
+}
+
 function ensureDatabaseSchema(PDO $pdo)
 {
     ensurePinCoordinates($pdo);
     ensureRouteNameColumn($pdo);
+    ensureAdminDisabledColumn($pdo);
     ensureAutoIncrementColumn($pdo, 'pins', 'pin_id');
     ensureAutoIncrementColumn($pdo, 'routes', 'route_id');
     ensureAutoIncrementColumn($pdo, 'route_points', 'id');
@@ -332,7 +353,7 @@ try {
     jsonError(500, 'Server error: ' . $e->getMessage());
 }
  
-function dispatchRequest(PDO $pdo, $action, $action2, $resourceId, $method, $requestData)
+function dispatchRequest(PDO $pdo, string $action, string $action2, string $resourceId, string $method, array $requestData)
 {
     switch ($action) {
  
@@ -455,7 +476,7 @@ function dispatchRequest(PDO $pdo, $action, $action2, $resourceId, $method, $req
    AUTH HANDLERS
    ============================================================ */
  
-function handleLogin(PDO $pdo, $data)
+function handleLogin(PDO $pdo, array $data)
 {
     $identifier = isset($data['identifier']) ? trim($data['identifier']) : '';
     $password   = isset($data['password'])   ? $data['password']        : '';
@@ -576,7 +597,7 @@ function handleGetFloors(PDO $pdo)
     jsonResponse(['floors' => $floors]);
 }
  
-function handleCreateFloor(PDO $pdo, $data)
+function handleCreateFloor(PDO $pdo, array $data)
 {
     setAdminSession($pdo);
  
@@ -597,7 +618,7 @@ function handleCreateFloor(PDO $pdo, $data)
     ]);
 }
  
-function handleUpdateFloor(PDO $pdo, $id, $data)
+function handleUpdateFloor(PDO $pdo, string $id, array $data)
 {
     setAdminSession($pdo);
  
@@ -616,7 +637,7 @@ function handleUpdateFloor(PDO $pdo, $id, $data)
     jsonSuccess('Floor updated successfully.', ['id' => (int)$id]);
 }
  
-function handleToggleFloor(PDO $pdo, $id)
+function handleToggleFloor(PDO $pdo, string $id)
 {
     setAdminSession($pdo);
  
@@ -632,7 +653,7 @@ function handleToggleFloor(PDO $pdo, $id)
     ]);
 }
  
-function handleDeleteFloor(PDO $pdo, $id)
+function handleDeleteFloor(PDO $pdo, string $id)
 {
     setAdminSession($pdo);
  
@@ -684,7 +705,7 @@ function handleGetPins(PDO $pdo)
     jsonResponse(['pins' => $pins]);
 }
  
-function handleCreatePin(PDO $pdo, $data)
+function handleCreatePin(PDO $pdo, array $data)
 {
     setAdminSession($pdo);
     ensurePinCoordinates($pdo);
@@ -747,7 +768,7 @@ function handleCreatePin(PDO $pdo, $data)
     ]);
 }
  
-function handleUpdatePin(PDO $pdo, $id, $data)
+function handleUpdatePin(PDO $pdo, string $id, array $data)
 {
     setAdminSession($pdo);
     ensurePinCoordinates($pdo);
@@ -807,7 +828,7 @@ function handleUpdatePin(PDO $pdo, $id, $data)
     ]);
 }
  
-function handleDeletePin(PDO $pdo, $id)
+function handleDeletePin(PDO $pdo, string $id)
 {
     setAdminSession($pdo);
  
@@ -909,7 +930,7 @@ function handleGetRoutes(PDO $pdo)
     jsonResponse(['routes' => $routes]);
 }
  
-function resolvePinId(PDO $pdo, $pinIdRaw)
+function resolvePinId(PDO $pdo, ?string $pinIdRaw)
 {
     // If it's already a numeric ID, return it directly
     if (is_numeric($pinIdRaw) && (int)$pinIdRaw > 0) {
@@ -927,7 +948,7 @@ function resolvePinId(PDO $pdo, $pinIdRaw)
     return null;
 }
  
-function handleCreateRoute(PDO $pdo, $data)
+function handleCreateRoute(PDO $pdo, array $data)
 {
     setAdminSession($pdo);
  
@@ -1013,7 +1034,7 @@ function handleCreateRoute(PDO $pdo, $data)
     }
 }
  
-function handleUpdateRoute(PDO $pdo, $id, $data)
+function handleUpdateRoute(PDO $pdo, string $id, array $data)
 {
     setAdminSession($pdo);
  
@@ -1096,7 +1117,7 @@ function handleUpdateRoute(PDO $pdo, $id, $data)
     }
 }
  
-function handleDeleteRoute(PDO $pdo, $id)
+function handleDeleteRoute(PDO $pdo, string $id)
 {
     setAdminSession($pdo);
  
@@ -1135,7 +1156,7 @@ function handleGetLegends(PDO $pdo)
     jsonResponse(['legends' => $legends]);
 }
  
-function handleCreateLegend(PDO $pdo, $data)
+function handleCreateLegend(PDO $pdo, array $data)
 {
     setAdminSession($pdo);
  
@@ -1164,7 +1185,7 @@ function handleCreateLegend(PDO $pdo, $data)
     ]);
 }
  
-function handleUpdateLegend(PDO $pdo, $id, $data)
+function handleUpdateLegend(PDO $pdo, string $id, array $data)
 {
     setAdminSession($pdo);
  
@@ -1189,7 +1210,7 @@ function handleUpdateLegend(PDO $pdo, $id, $data)
     jsonSuccess('Legend updated successfully.', ['id' => (int)$id]);
 }
  
-function handleDeleteLegend(PDO $pdo, $id)
+function handleDeleteLegend(PDO $pdo, string $id)
 {
     setAdminSession($pdo);
  
@@ -1226,7 +1247,7 @@ function handleGetVisitorLogs(PDO $pdo)
     jsonResponse(['visitor_logs' => $logs]);
 }
 
-function handleUpdateVisitorLogTimeOut(PDO $pdo, $logId, $data)
+function handleUpdateVisitorLogTimeOut(PDO $pdo, string $logId, array $data)
 {
     if (!$logId) { jsonError(400, 'Log ID is required.'); }
     ensureVisitorLogsTimeOut($pdo);
@@ -1244,7 +1265,7 @@ function handleUpdateVisitorLogTimeOut(PDO $pdo, $logId, $data)
     }
 }
  
-function handleCreateVisitorLog(PDO $pdo, $data)
+function handleCreateVisitorLog(PDO $pdo, array $data)
 {
     $name        = sanitizeString($data['name']        ?? '');
     $purpose     = sanitizeString($data['purpose']     ?? '');
@@ -1303,7 +1324,7 @@ function handleGetAdmins(PDO $pdo)
     jsonResponse(['success' => true, 'data' => ['admins' => $admins]]);
 }
 
-function handleCreateAdminAccount(PDO $pdo, $data)
+function handleCreateAdminAccount(PDO $pdo, array $data)
 {
     setAdminSession($pdo);
 
@@ -1359,7 +1380,7 @@ function handleCreateAdminAccount(PDO $pdo, $data)
     }
 }
 
-function handleUpdateAdminAccount(PDO $pdo, $id, $data)
+function handleUpdateAdminAccount(PDO $pdo, string $id, array $data)
 {
     setAdminSession($pdo);
 
@@ -1413,7 +1434,7 @@ function handleUpdateAdminAccount(PDO $pdo, $id, $data)
     ]);
 }
 
-function handleDeleteAdminAccount(PDO $pdo, $id)
+function handleDeleteAdminAccount(PDO $pdo, string $id)
 {
     setAdminSession($pdo);
 
@@ -1452,7 +1473,7 @@ function handleDeleteAdminAccount(PDO $pdo, $id)
     jsonSuccess('Admin deleted successfully.', ['deleted_id' => (int)$id, 'deleted_rows' => $deletedRows]);
 }
 
-function handleCreateAuditLog(PDO $pdo, $data)
+function handleCreateAuditLog(PDO $pdo, array $data)
 {
     setAdminSession($pdo);
 
@@ -1499,8 +1520,6 @@ function handleGetAuditLog(PDO $pdo)
  
     jsonResponse(['audit_log' => $logs]);
 }
-
-
 function handleDeleteAuditLog(PDO $pdo)
 {
     try {
@@ -1510,4 +1529,3 @@ function handleDeleteAuditLog(PDO $pdo)
         jsonError(400, 'Failed to clear audit log: ' . $e->getMessage());
     }
 }
-

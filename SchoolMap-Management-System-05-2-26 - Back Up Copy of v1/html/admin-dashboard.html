@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 
-  <head>
+<head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SchoolMap — Admin Panel</title>
@@ -11,22 +11,12 @@
       href="https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=Patrick+Hand&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="../assets/css/style.css" />
+    <link rel="stylesheet" href="../assets/css/admin.css?v=20260511-backbuttons" />
   </head>
   <body>
     <div id="adminLoadingOverlay" class="admin-loading-overlay">
       <div class="admin-loading-card verification-card">
         <h2 id="admin-loading-text">Administrator confirmation</h2>
-
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SchoolMap — Admin Panel</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=Patrick+Hand&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="../assets/css/admin.css?v=20260510-1535" />
-
 
         <div class="verification-step" id="verificationStep1">
           <p class="verification-instruction">
@@ -97,7 +87,7 @@
             </div>
             <div>
               <h1>SchoolMap</h1>
-              <p>Admin Console</p>
+              <p>Admin-Dashboard</p>
             </div>
           </div>
           <button class="icon-btn" id="backBtn" title="Back">
@@ -415,19 +405,6 @@
         upload for the best map fit.
       </div>
     </div>
-
-
-    <script>
-      function getCachedCurrentUser() {
-        try {
-          return JSON.parse(
-            localStorage.getItem("schoolmap_current_user") || "null",
-          );
-        } catch (err) {
-          return null;
-        }
-      }
-      </script>
   <div class="admin-back-confirm" id="adminBackConfirm" hidden>
     <div class="admin-back-card">
       <h2>Return to map?</h2>
@@ -456,6 +433,11 @@
       }
     }
 
+    function isAdminUser(user) {
+      var role = String((user && user.role) || '').trim().toLowerCase();
+      return role === 'admin' || role === 'super_admin';
+    }
+
     function updateAdminLoadingText(message) {
       var el = document.getElementById('admin-loading-text');
       if (el) { el.textContent = message; }
@@ -476,13 +458,15 @@
       updateAdminLoadingText('Verify admin access');
 
       var user = await getCachedCurrentUser();
-      if (!user || (user.role !== 'admin' && user.role !== 'super_admin')) {
+      if (!isAdminUser(user)) {
         alert('Admin access only. Please sign in with the administrator account.');
         window.location.href = 'login.html';
         return false;
 
       }
       window.SchoolMapCurrentUser = user;
+      initializeAdminVerification();
+      return true;
 
       function updateAdminLoadingText(message) {
         var el = document.getElementById("admin-loading-text");
@@ -556,6 +540,7 @@
 
         confirmAdmin.addEventListener("change", updateProceedState);
         confirmResponsibility.addEventListener("change", updateProceedState);
+        updateProceedState();
 
         proceedBtn.addEventListener("click", function () {
           step1.classList.add("hidden");
@@ -627,7 +612,7 @@
         verifyAdminPanelAccess();
       });
     </script>
-    <script src="../assets/js/core.js?v=20260510-1430"></script>
-    <script src="../assets/js/admin-dashboard.js?v=20260510-1430"></script>
+    <script src="../assets/js/core.js?v=20260511-logout-modal"></script>
+    <script src="../assets/js/admin-dashboard.js?v=20260511-backbuttons"></script>
   </body>
 </html>

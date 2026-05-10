@@ -197,7 +197,7 @@ Used in: admin-dashboard.html
 }
 .brand { display: flex; align-items: center; gap: 12px; }
 .brand-logo {
-  width: 42px; height: 42px;
+  width: 52px; height: 52px;
   background: var(--accent); color: #fff;
   display: grid; place-items: center;
   border: 3px solid var(--fg);
@@ -206,8 +206,8 @@ Used in: admin-dashboard.html
   transform: rotate(-4deg);
   flex-shrink: 0;
 }
-.brand h1 { font-size: 22px; line-height: 1; }
-.brand p { margin: 2px 0 0; font-size: 13px; color: var(--fg); opacity: 0.6; }
+.brand h1 { font-size: 28px; line-height: 1; }
+.brand p { margin: 2px 0 0; font-size: 18px; color: var(--fg); opacity: 0.6; }
 
 /* ADMIN DASHBOARD */
 .section-tabs {
@@ -501,7 +501,7 @@ Used in: admin-dashboard.html
 }
 
 .admin-back-card {
-  width: min(420px, 100%);
+  width: min(480px, 100%);
   padding: 24px;
   background: #fff;
   border: 3px solid var(--fg);
@@ -524,13 +524,19 @@ Used in: admin-dashboard.html
 }
 
 .admin-back-actions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   gap: 12px;
 }
 
-.admin-back-actions.has-save {
-  grid-template-columns: 1fr 1fr 1fr;
+.admin-back-actions .btn {
+  min-width: 140px;
+  white-space: nowrap;
+}
+
+.admin-back-actions .btn[hidden] {
+  display: none !important;
 }
 
 /* ADMIN DASHBOARD */

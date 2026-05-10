@@ -192,13 +192,34 @@ function navigate(page) {
   window.location.href = page + ".html";
 }
 
-function handleLogout() {
+function ensureLogoutModal() {
   var modal = document.getElementById("logoutModal");
   if (modal) {
-    modal.style.display = "flex";
-    return;
+    return modal;
   }
-  performLogout();
+
+  modal = document.createElement("div");
+  modal.id = "logoutModal";
+  modal.className = "modal-overlay generated-logout-modal";
+  modal.style.cssText = "display:none;position:fixed;inset:0;z-index:9999;align-items:center;justify-content:center;padding:20px;background:rgba(25,42,87,.42);";
+  modal.innerHTML =
+    '<div class="confirm-card" style="width:min(420px,100%);padding:24px;background:#fff;border:3px solid #2d2d2d;border-radius:18px;box-shadow:8px 8px 0 #2d2d2d;text-align:center;">' +
+      '<h2 style="margin:0 0 8px;font-size:26px;color:#192A57;">Confirm logout</h2>' +
+      '<p style="margin:0 0 20px;font-size:17px;color:rgba(45,45,45,.78);">Are you sure you want to sign out?</p>' +
+      '<div class="confirm-actions" style="display:flex;justify-content:center;gap:12px;flex-wrap:wrap;">' +
+        '<button class="wobbly-btn wobbly-btn-secondary btn btn-ghost" type="button" onclick="hideLogoutModal()">Cancel</button>' +
+        '<button class="wobbly-btn wobbly-btn-danger btn btn-danger" type="button" onclick="confirmLogout()">Logout</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(modal);
+  return modal;
+}
+
+function handleLogout() {
+  var modal = ensureLogoutModal();
+  if (modal) {
+    modal.style.display = "flex";
+  }
 }
 
 function hideLogoutModal() {

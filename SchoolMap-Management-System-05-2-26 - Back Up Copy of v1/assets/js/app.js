@@ -504,6 +504,9 @@ function handleForgotPassword(event) {
    ========================================================= */
 
 function handleLogout() {
+  if (!confirm("Are you sure you want to sign out?")) {
+    return;
+  }
   AppState.currentUser = null;
   setCurrentUser(null);
   closeUserMenu();

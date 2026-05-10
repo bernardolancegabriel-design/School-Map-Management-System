@@ -207,6 +207,11 @@ function enableMapTransitions() {
 
 /* ====================== USER AREA ====================== */
 
+function isAdminUser(user) {
+  var role = String((user && user.role) || "").trim().toLowerCase();
+  return role === "admin" || role === "super_admin";
+}
+
 function renderUserArea() {
   var container = document.getElementById("map-user-area");
   if (!container) return;
@@ -215,7 +220,7 @@ function renderUserArea() {
 
   if (user) {
     var displayName = escHtml(user.fullName || "Guest");
-    var isAdmin = user.role === "admin";
+    var isAdmin = isAdminUser(user);
 
     container.innerHTML = `
       <button class="${isAdmin ? "map-user-btn admin-btn" : "map-user-btn"}" onclick="toggleUserMenu(this)">
@@ -361,11 +366,15 @@ function handleLogout() {
     }
   } else {
     // Admin logout
-    if (confirm("Are you sure you want to logout?")) {
-      clearCurrentUser();
-      renderUserArea();
-      showToast("You have been logged out.");
+    var modal = document.getElementById("logoutModal");
+    if (modal) {
+      modal.style.display = "flex";
+      return;
     }
+    if (!confirm("Are you sure you want to logout?")) return;
+    clearCurrentUser();
+    renderUserArea();
+    showToast("You have been logged out.");
   }
 }
 
@@ -388,7 +397,7 @@ function toggleUserMenu(button) {
     : user.role || "User";
 
   var adminItem = document.getElementById("user-dropdown-admin");
-  if (adminItem) adminItem.style.display = user.role === "admin" ? "" : "none";
+  if (adminItem) adminItem.style.display = isAdminUser(user) ? "" : "none";
 
   if (button) {
     var rect = button.getBoundingClientRect();
@@ -426,7 +435,7 @@ function handleGlobalClick(event) {
 
 function verifyAdminAccess() {
   var user = getCurrentUser();
-  if (!user || user.role !== "admin") {
+  if (!isAdminUser(user)) {
     showToast("Admin access requires signing in as Administrator.");
     navigate("login");
     return;
@@ -1785,11 +1794,15 @@ function handleLogout() {
     showGuestLogoutConfirmation();
   } else {
     // Admin Logout
-    if (confirm("Are you sure you want to logout?")) {
-      clearCurrentUser();
-      renderUserArea();
-      showToast("You have been logged out.");
+    const modal = document.getElementById("logoutModal");
+    if (modal) {
+      modal.style.display = "flex";
+      return;
     }
+    if (!confirm("Are you sure you want to logout?")) return;
+    clearCurrentUser();
+    renderUserArea();
+    showToast("You have been logged out.");
   }
 }
 
