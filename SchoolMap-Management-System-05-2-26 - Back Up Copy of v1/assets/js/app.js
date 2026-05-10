@@ -4,9 +4,7 @@
    =========================================================
    Architecture:
      - Single-page app with hash-based routing
-     - LocalStorage for user/data persistence (no server needed)
-     - API calls to api.php when PHP backend is available
-     - Graceful fallback to localStorage if PHP not available
+     - Database-backed persistence through backend/api.php
    ========================================================= */
 
 "use strict";
@@ -23,74 +21,14 @@ var APP_LEGENDS_KEY     = "schoolmap_legends";
 var APP_DATA_VERSION    = "schoolmap_data_v3";
 
 var DEFAULT_FLOORS = [
-  { id: 1, name: "Ground Floor", label: "1F" },
-  { id: 2, name: "2nd Floor",    label: "2F" },
-  { id: 3, name: "3rd Floor",    label: "3F" }
+  { id: 1, name: "Ground Floor", label: "1F" }
 ];
 
-var DEFAULT_LEGENDS = [
-  { id: "classroom", type: "classroom", label: "Classroom",          color: "#192A57" },
-  { id: "office",    type: "office",    label: "VP / Admin Office",  color: "#8F3347" },
-  { id: "admin",     type: "admin",     label: "Admin / Registrar",  color: "#C24322" },
-  { id: "library",   type: "library",   label: "Library",            color: "#2d5da1" },
-  { id: "cafeteria", type: "cafeteria", label: "Cafeteria",          color: "#b45309" },
-  { id: "gym",       type: "gym",       label: "Gymnasium",          color: "#15803d" },
-  { id: "restroom",  type: "restroom",  label: "Restroom",           color: "#6b7280" },
-  { id: "stairwell", type: "stairwell", label: "Stairwell",          color: "#7c3aed" },
-  { id: "entrance",  type: "entrance",  label: "Entrance / Exit",    color: "#0891b2" },
-  { id: "emergency", type: "emergency", label: "Emergency Exit",     color: "#dc2626" }
-];
+var DEFAULT_LEGENDS = [];
 
-var DEFAULT_LOCATIONS = [
-  // Ground Floor
-  { id: "entrance-main",  name: "Main Entrance",         type: "entrance",  floor: 1, x: 50, y: 7,  description: "Main building entrance (top)" },
-  { id: "entrance-left",  name: "Exit / Entrance Left",  type: "entrance",  floor: 1, x: 3,  y: 53, description: "Left side emergency exit" },
-  { id: "entrance-right", name: "Exit / Entrance Right", type: "entrance",  floor: 1, x: 97, y: 53, description: "Right side emergency exit" },
-  { id: "stair-left",     name: "Stairwell Left",        type: "stairwell", floor: 1, x: 27, y: 91, description: "Left stairwell to upper floors" },
-  { id: "stair-right",    name: "Stairwell Right",       type: "stairwell", floor: 1, x: 73, y: 91, description: "Right stairwell to upper floors" },
-  { id: "room-101",       name: "Room 101",              type: "classroom", floor: 1, x: 5,  y: 28, description: "Classroom / Office" },
-  { id: "room-102",       name: "Room 102",              type: "classroom", floor: 1, x: 12, y: 28, description: "Classroom / Office" },
-  { id: "room-103",       name: "Room 103",              type: "office",    floor: 1, x: 19, y: 28, description: "Faculty Office" },
-  { id: "restroom-1a",    name: "Restroom (Left)",       type: "restroom",  floor: 1, x: 25, y: 28, description: "Ground floor left restroom" },
-  { id: "room-104",       name: "Room 104",              type: "classroom", floor: 1, x: 31, y: 28, description: "Classroom" },
-  { id: "parking-1",      name: "Parking / Storage",     type: "admin",     floor: 1, x: 38, y: 28, description: "Parking / storage area" },
-  { id: "cafeteria-1",    name: "Cafeteria",             type: "cafeteria", floor: 1, x: 45, y: 28, description: "Student dining / café area" },
-  { id: "lobby-1",        name: "Central Lobby",         type: "entrance",  floor: 1, x: 50, y: 55, description: "Open lobby with garden feature" },
-  { id: "room-105",       name: "Room 105",              type: "office",    floor: 1, x: 58, y: 28, description: "Admin Office" },
-  { id: "restroom-1b",    name: "Restroom (Right)",      type: "restroom",  floor: 1, x: 64, y: 28, description: "Ground floor right restroom" },
-  { id: "room-106",       name: "Room 106",              type: "classroom", floor: 1, x: 71, y: 28, description: "Classroom" },
-  { id: "library-1",      name: "Library / Hall",        type: "library",   floor: 1, x: 80, y: 28, description: "School library / function hall" },
-  { id: "room-107",       name: "Room 107",              type: "classroom", floor: 1, x: 91, y: 28, description: "Classroom" },
-  { id: "room-108",       name: "Room 108",              type: "classroom", floor: 1, x: 11, y: 71, description: "Classroom" },
-  { id: "room-109",       name: "Room 109",              type: "admin",     floor: 1, x: 18, y: 71, description: "Admin Office" },
-  { id: "room-110",       name: "Room 110",              type: "classroom", floor: 1, x: 25, y: 71, description: "Classroom" },
-  { id: "room-111",       name: "Room 111",              type: "classroom", floor: 1, x: 33, y: 71, description: "Classroom" },
-  { id: "room-112",       name: "Room 112",              type: "classroom", floor: 1, x: 60, y: 71, description: "Classroom" },
-  { id: "room-113",       name: "Room 113",              type: "office",    floor: 1, x: 68, y: 71, description: "Office" },
-  { id: "gym-1",          name: "Gymnasium",             type: "gym",       floor: 1, x: 76, y: 71, description: "Sports & physical education" },
-  { id: "room-114",       name: "Room 114",              type: "classroom", floor: 1, x: 84, y: 71, description: "Classroom" },
-  { id: "room-115",       name: "Room 115",              type: "cafeteria", floor: 1, x: 91, y: 71, description: "Canteen / Food area" },
-  // Second Floor
-  { id: "vp-room",        name: "VP Office",             type: "office",    floor: 2, x: 30, y: 30, description: "Vice President's office" },
-  { id: "president-room", name: "President's Office",    type: "office",    floor: 2, x: 60, y: 25, description: "School President's office" },
-  { id: "registrar",      name: "Registrar",             type: "admin",     floor: 2, x: 45, y: 55, description: "Student records & registration" },
-  { id: "mis",            name: "MIS Office",            type: "admin",     floor: 2, x: 75, y: 55, description: "Management Information Systems" },
-  { id: "room-201",       name: "Room 201 - English",    type: "classroom", floor: 2, x: 20, y: 70, description: "English department" },
-  { id: "room-202",       name: "Room 202 - History",    type: "classroom", floor: 2, x: 50, y: 72, description: "Social studies" },
-  { id: "restroom-2a",    name: "Restroom (2nd)",        type: "restroom",  floor: 2, x: 80, y: 80, description: "Second floor restroom" },
-  { id: "stair-2",        name: "Stairwell A (2F)",      type: "stairwell", floor: 2, x: 15, y: 85, description: "Stairwell access" },
-  // Third Floor
-  { id: "room-301",       name: "Room 301 - Computer Lab", type: "classroom", floor: 3, x: 30, y: 35, description: "Computer laboratory" },
-  { id: "room-302",       name: "Room 302 - Arts",          type: "classroom", floor: 3, x: 60, y: 35, description: "Arts & crafts room" },
-  { id: "room-303",       name: "Room 303 - Music",         type: "classroom", floor: 3, x: 45, y: 60, description: "Music room" },
-  { id: "restroom-3a",    name: "Restroom (3rd)",           type: "restroom",  floor: 3, x: 15, y: 75, description: "Third floor restroom" },
-  { id: "emergency-3",    name: "Emergency Exit",           type: "emergency", floor: 3, x: 80, y: 90, description: "Emergency exit" }
-];
+var DEFAULT_LOCATIONS = [];
 
-var LOCATION_TYPES = [
-  "classroom", "office", "admin", "library", "cafeteria",
-  "gym", "restroom", "stairwell", "entrance", "emergency"
-];
+var LOCATION_TYPES = [];
 
 var FAQ_ITEMS = [
   { q: "How do I navigate the map?",      a: "Click 'Explore as Guest' on the home page to open the interactive map. You can zoom in/out, switch floors, and click any location pin to see its details.", color: "#192A57" },
@@ -146,31 +84,15 @@ var AppState = {
    ========================================================= */
 
 function storageGet(key, defaultValue) {
-  try {
-    var raw = localStorage.getItem(key);
-    if (raw === null || raw === undefined) {
-      return (typeof defaultValue === "function") ? defaultValue() : defaultValue;
-    }
-    return JSON.parse(raw);
-  } catch (err) {
-    return (typeof defaultValue === "function") ? defaultValue() : defaultValue;
-  }
+  return (typeof defaultValue === "function") ? defaultValue() : defaultValue;
 }
 
 function storageSet(key, value) {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch (err) {
-    console.warn("localStorage write failed:", err);
-  }
+  return value;
 }
 
 function migrateData() {
-  var version = localStorage.getItem("schoolmap_data_version");
-  if (version !== APP_DATA_VERSION) {
-    localStorage.removeItem(APP_LOCATIONS_KEY);
-    localStorage.setItem("schoolmap_data_version", APP_DATA_VERSION);
-  }
+  return true;
 }
 
 function getStoredLocations() {
@@ -195,14 +117,14 @@ function storeUsers(users) {
 }
 
 function getCurrentUser() {
-  return storageGet(APP_CURRENT_KEY, null);
+  return AppState.currentUser || null;
 }
 
 function setCurrentUser(user) {
   if (user) {
-    storageSet(APP_CURRENT_KEY, user);
+    AppState.currentUser = user;
   } else {
-    localStorage.removeItem(APP_CURRENT_KEY);
+    AppState.currentUser = null;
   }
 }
 

@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="en">
+
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -16,6 +17,16 @@
     <div id="adminLoadingOverlay" class="admin-loading-overlay">
       <div class="admin-loading-card verification-card">
         <h2 id="admin-loading-text">Administrator confirmation</h2>
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SchoolMap — Admin Panel</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=Patrick+Hand&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/css/admin.css?v=20260510-1535" />
+
 
         <div class="verification-step" id="verificationStep1">
           <p class="verification-instruction">
@@ -405,6 +416,7 @@
       </div>
     </div>
 
+
     <script>
       function getCachedCurrentUser() {
         try {
@@ -415,6 +427,62 @@
           return null;
         }
       }
+      </script>
+  <div class="admin-back-confirm" id="adminBackConfirm" hidden>
+    <div class="admin-back-card">
+      <h2>Return to map?</h2>
+      <p>Are you sure you want to go back to the map?</p>
+      <div class="admin-back-actions">
+        <button class="btn btn-ghost" id="adminBackCancel" type="button">Cancel</button>
+        <button class="btn btn-secondary" id="adminBackSave" type="button" hidden>Save all</button>
+        <button class="btn btn-primary" id="adminBackProceed" type="button">Back to map</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    async function getCachedCurrentUser() {
+      try {
+        var fallbackApi = 'http://localhost/SCHOOL%20MAPS/REPO/School-Map-Management-System/SchoolMap-Management-System-05-2-26%20-%20Back%20Up%20Copy%20of%20v1/backend/api.php?action=me';
+        var url = window.location.protocol === 'file:' ? fallbackApi : '../backend/api.php?action=me';
+        var response = await fetch(url, {
+          credentials: 'same-origin',
+          cache: 'no-store'
+        });
+        var payload = await response.json();
+        return payload.user || null;
+      } catch (err) {
+        return null;
+      }
+    }
+
+    function updateAdminLoadingText(message) {
+      var el = document.getElementById('admin-loading-text');
+      if (el) { el.textContent = message; }
+    }
+
+    function hideAdminLoadingOverlay() {
+      var overlay = document.getElementById('adminLoadingOverlay');
+      if (overlay) { overlay.style.display = 'none'; }
+    }
+
+    function showAdminLoadingOverlay() {
+      var overlay = document.getElementById('adminLoadingOverlay');
+      if (overlay) { overlay.style.display = 'flex'; }
+    }
+
+    async function verifyAdminPanelAccess() {
+      showAdminLoadingOverlay();
+      updateAdminLoadingText('Verify admin access');
+
+      var user = await getCachedCurrentUser();
+      if (!user || (user.role !== 'admin' && user.role !== 'super_admin')) {
+        alert('Admin access only. Please sign in with the administrator account.');
+        window.location.href = 'login.html';
+        return false;
+
+      }
+      window.SchoolMapCurrentUser = user;
 
       function updateAdminLoadingText(message) {
         var el = document.getElementById("admin-loading-text");
@@ -553,12 +621,13 @@
           });
         }
       }
+    }
 
       window.addEventListener("DOMContentLoaded", function () {
         verifyAdminPanelAccess();
       });
     </script>
-    <script src="../assets/js/core.js"></script>
-    <script src="../assets/js/admin-dashboard.js"></script>
+    <script src="../assets/js/core.js?v=20260510-1430"></script>
+    <script src="../assets/js/admin-dashboard.js?v=20260510-1430"></script>
   </body>
 </html>

@@ -5,13 +5,139 @@
 
 "use strict";
 
+const API_BASE = typeof getApiBase === "function" ? getApiBase() : "../backend/api.php";
+
 document.addEventListener("DOMContentLoaded", function () {
-  loadCurrentUser();
   initMapPage();
   document.addEventListener("click", handleGlobalClick);
 });
 
-function initMapPage() {
+window.addEventListener("focus", function () {
+  if (AppState.mapDataReady) {
+    refreshMapDataFromDatabase();
+  }
+});
+
+async function apiGet(action) {
+  try {
+    const response = await fetch(typeof apiUrl === "function" ? apiUrl(action) : API_BASE + "?action=" + encodeURIComponent(action), {
+      credentials: "same-origin",
+      cache: "no-store",
+    });
+    return await response.json();
+  } catch (err) {
+    console.warn("API load failed:", action, err);
+    return null;
+  }
+}
+
+function normalizeDbImagePath(path) {
+  if (!path) return "";
+  if (/^data:/i.test(path) || /^https?:\/\//i.test(path) || /^\/\//.test(path)) {
+    return path;
+  }
+  if (/^\.?(images\/.+)$/i.test(path)) {
+    return "../" + RegExp.$1;
+  }
+  if (/^\.?(maps\/ground\.png)$/i.test(path)) {
+    return "../images/map-ground-floor.png";
+  }
+  if (/^\.?(maps\/.+)$/i.test(path)) {
+    return path;
+  }
+  return path;
+}
+
+function normalizeDbFloor(floor, index) {
+  var imagePath = normalizeDbImagePath(floor.image_path || "");
+  return {
+    id: Number(floor.id ?? floor.map_id),
+    name: floor.name || floor.floor_name || "Untitled Floor",
+    label: floor.label || `${index + 1}F`,
+    image_path: imagePath,
+  };
+}
+
+function normalizeDbLegend(legend) {
+  const name = legend.label || legend.name || "Untitled";
+  return {
+    id: String(legend.id ?? legend.category_id),
+    type: legend.type || String(name).toLowerCase().replace(/[\s/]+/g, "_"),
+    label: name,
+    color: legend.color || "#192A57",
+    icon: legend.icon || "MapPin",
+  };
+}
+
+function normalizeDbPin(pin) {
+  const categoryId = pin.legendId ?? pin.category_id ?? "";
+  return {
+    id: String(pin.id ?? pin.pin_id),
+    name: pin.name || "Untitled",
+    description: pin.description || "",
+    type: categoryId === null ? "" : String(categoryId),
+    legendId: categoryId === null ? "" : String(categoryId),
+    floor: Number(pin.floor ?? pin.map_id ?? 1),
+    x: Number(pin.x ?? 50),
+    y: Number(pin.y ?? 50),
+    image: normalizeDbImagePath(pin.image || ""),
+  };
+}
+
+function normalizeDbRoute(route) {
+  var routeFloor = Number(route.floor ?? route.map_id ?? 1);
+  var points = Array.isArray(route.points) ? route.points.slice() : [];
+  points.sort(function (a, b) {
+    return Number(a.point_order ?? a.pointOrder ?? 0) - Number(b.point_order ?? b.pointOrder ?? 0);
+  });
+
+  return {
+    id: String(route.id ?? route.route_id),
+    name: route.name || route.route_name || "Untitled Route",
+    originId: String(route.originId ?? route.from_pin_id ?? ""),
+    destinationId: String(route.destinationId ?? route.to_pin_id ?? ""),
+    origin: route.origin || route.from_pin_name || "",
+    destination: route.destination || route.to_pin_name || "",
+    direction: route.direction || "",
+    floor: routeFloor,
+    archived: route.archived === true || route.archived === 1 || route.archived === "1",
+    points: points.map(function (point, index) {
+      return {
+        x: Number(point.x ?? 50),
+        y: Number(point.y ?? 50),
+        floor: Number(point.floor ?? routeFloor),
+        pointOrder: Number(point.point_order ?? point.pointOrder ?? index + 1),
+      };
+    }),
+  };
+}
+
+async function loadMapDataFromDatabase() {
+  const [meRes, floorsRes, legendsRes, pinsRes, routesRes] = await Promise.all([
+    apiGet("me"),
+    apiGet("floors"),
+    apiGet("legends"),
+    apiGet("pins"),
+    apiGet("routes"),
+  ]);
+
+  AppState.currentUser = meRes?.user || null;
+  AppState.floors = Array.isArray(floorsRes?.floors)
+    ? floorsRes.floors.map(normalizeDbFloor)
+    : [];
+  AppState.legends = Array.isArray(legendsRes?.legends)
+    ? legendsRes.legends.map(normalizeDbLegend)
+    : [];
+  AppState.locations = Array.isArray(pinsRes?.pins)
+    ? pinsRes.pins.map(normalizeDbPin)
+    : [];
+  AppState.routes = Array.isArray(routesRes?.routes)
+    ? routesRes.routes.map(normalizeDbRoute)
+    : [];
+}
+
+async function initMapPage() {
+  await loadMapDataFromDatabase();
   AppState.zoom = 1;
   AppState.panX = 0;
   AppState.panY = 0;
@@ -19,11 +145,10 @@ function initMapPage() {
   AppState.routeFrom = "";
   AppState.routeTo = "";
   AppState.showRoute = false;
-  AppState.routes = [];
-  AppState.floors = getStoredFloors().slice(0, 1);
-  AppState.currentFloor = AppState.floors[0]?.id || 1;
-  AppState.locations = getStoredLocations();
-  AppState.legends = getStoredLegends();
+  AppState.activeRoute = null;
+  AppState.activeRouteReversed = false;
+  AppState.activeLegendFilter = null;
+  AppState.currentFloor = AppState.floors[0]?.id || null;
 
   renderUserArea();
   populateRouteSelects();
@@ -31,8 +156,6 @@ function initMapPage() {
   renderLegendItems();
   renderMapCanvas();
   renderPins();
-  renderRecommendations();
-  updateYouAreHere();
   updateRouteBtnState();
   setupMapInteractions();
   requestAnimationFrame(enableMapTransitions);
@@ -43,112 +166,43 @@ function initMapPage() {
   if (toSel) toSel.value = "";
 
   initGuestFlow();
-
-  // Load fresh data from DB so pins/legends/floors always reflect latest DB state
-  loadMapDataFromDB();
+  showEntryBannerIfRequested();
+  AppState.mapDataReady = true;
 }
 
-function loadMapDataFromDB() {
-  var API_BASE = "../backend/api.php";
+async function refreshMapDataFromDatabase() {
+  var previousFloor = AppState.currentFloor;
+  var previousFilter = AppState.activeLegendFilter;
+  await loadMapDataFromDatabase();
 
-  // Fetch pins
-  fetch(API_BASE + "?action=pins", { credentials: "same-origin" })
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      var pins = (data && data.pins) ? data.pins : [];
-      if (pins.length > 0) {
-        AppState.locations = pins.map(function(pin) {
-          return {
-            id:          pin.id,
-            name:        pin.name,
-            description: pin.description || "",
-            legendId:    pin.category_id,
-            floor:       pin.map_id,
-            x:           pin.x != null ? +pin.x : 50,
-            y:           pin.y != null ? +pin.y : 50,
-            image:       pin.image || null,
-            color:       pin.category_color || null,
-          };
-        });
-        storageSet(APP_LOCATIONS_KEY, AppState.locations);
-        renderPins();
-        populateRouteSelects();
-        updateYouAreHere();
-      }
-    })
-    .catch(function(err) {
-      console.warn("Could not load pins from DB, using cached data:", err);
-    });
+  if (AppState.floors.some(function (floor) { return String(floor.id) === String(previousFloor); })) {
+    AppState.currentFloor = previousFloor;
+  } else {
+    AppState.currentFloor = AppState.floors[0]?.id || null;
+  }
 
-  // Fetch floors
-  fetch(API_BASE + "?action=floors", { credentials: "same-origin" })
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      var floors = (data && data.floors) ? data.floors : [];
-      if (floors.length > 0) {
-        AppState.floors = floors.filter(function(f) { return f.status === "active"; });
-        storageSet(APP_FLOORS_KEY, AppState.floors);
-        renderFloorButtons();
-        renderMapCanvas();
-      }
-    })
-    .catch(function(err) {
-      console.warn("Could not load floors from DB:", err);
-    });
+  if (
+    previousFilter !== null &&
+    !AppState.legends.some(function (legend) { return String(legend.id) === String(previousFilter); })
+  ) {
+    AppState.activeLegendFilter = null;
+  } else {
+    AppState.activeLegendFilter = previousFilter;
+  }
 
-  // Fetch legend categories
-  fetch(API_BASE + "?action=legends", { credentials: "same-origin" })
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      var legends = (data && data.legends) ? data.legends : [];
-      if (legends.length > 0) {
-        AppState.legends = legends.map(function(l) {
-          return {
-            id:    l.id,
-            label: l.name || l.label || "",
-            color: l.color || "#999",
-            icon:  l.icon || "",
-            type:  l.type || "",
-          };
-        });
-        storageSet(APP_LEGENDS_KEY, AppState.legends);
-        renderLegendItems();
-      }
-    })
-    .catch(function(err) {
-      console.warn("Could not load legends from DB:", err);
-    });
-
-  // Fetch routes (for waypoint-based route display)
-  fetch(API_BASE + "?action=routes", { credentials: "same-origin" })
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      var routes = (data && data.routes) ? data.routes : [];
-      AppState.routes = routes.filter(function(r) { return !r.archived; }).map(function(r) {
-        return {
-          id: r.id,
-          originId: r.originId != null ? r.originId : r.from_pin_id,
-          destinationId: r.destinationId != null ? r.destinationId : r.to_pin_id,
-          floor: r.floor || 1,
-          points: Array.isArray(r.points) ? r.points.map(function(p) {
-            return {
-              x: parseFloat(p.x) || 0,
-              y: parseFloat(p.y) || 0,
-              floor: p.floor || r.floor || 1,
-              pointOrder: p.point_order || p.pointOrder || 0,
-            };
-          }) : [],
-        };
-      });
-    })
-    .catch(function(err) {
-      console.warn("Could not load routes from DB:", err);
-    });
+  renderUserArea();
+  populateRouteSelects();
+  renderFloorButtons();
+  renderLegendItems();
+  renderMapCanvas();
+  renderPins();
+  renderRouteOverlay();
+  updateRouteBtnState();
 }
 
 function enableMapTransitions() {
-  var zoomContainer = document.getElementById("map-zoom-container");
-  if (zoomContainer) zoomContainer.classList.add("map-transition-enabled");
+  var canvas = document.getElementById("mapCanvas");
+  if (canvas) canvas.classList.add("map-transition-enabled");
 }
 
 /* ====================== USER AREA ====================== */
@@ -184,87 +238,136 @@ function renderUserArea() {
 /* ====================== PERSISTENCE ====================== */
 
 function loadCurrentUser() {
-  const saved = localStorage.getItem("schoolmap_current_user");
-  AppState.currentUser = saved ? JSON.parse(saved) : null;
+  return AppState.currentUser;
 }
 
 function saveCurrentUser(user) {
   if (!user) return;
-  localStorage.setItem("schoolmap_current_user", JSON.stringify(user));
   AppState.currentUser = user;
 }
 
 function clearCurrentUser() {
-  localStorage.removeItem("schoolmap_current_user");
   AppState.currentUser = null;
 }
 
 function saveGuestLog(guest) {
-  let logs = JSON.parse(localStorage.getItem("schoolmap_logs") || "[]");
-  logs.unshift({
-    name: guest.fullName,
-    category: guest.category,
-    purpose: guest.purpose,
-    time_in: guest.time_in || new Date().toISOString(),
-    timestamp: new Date().toISOString(),
-  });
-  localStorage.setItem("schoolmap_logs", JSON.stringify(logs.slice(0, 50)));
-
-  // Also save to DB and capture log_id for time_out recording on logout
   const now = new Date();
-  const destEl = document.getElementById("guest-destination");
-  const plateEl = document.getElementById("guest-plate");
   const payload = {
     name: guest.fullName,
     purpose: guest.purpose,
-    destination: (destEl && destEl.value.trim()) || "Map",
+    destination: document.getElementById("guest-destination").value.trim() || "Map",
     category: guest.category,
     time_in: now.toTimeString().split(' ')[0],
     date: now.toISOString().split('T')[0],
-    plate_no: (plateEl && plateEl.value.trim()) || null,
+    plate_no: document.getElementById("guest-plate").value.trim() || null,
   };
 
-  fetch("../backend/api.php?action=visitor_logs", {
+  fetch(typeof apiUrl === "function" ? apiUrl("visitor_logs") : API_BASE + "?action=visitor_logs", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
-  })
-  .then(function(r) { return r.json(); })
-  .then(function(data) {
-    if (data && data.data && data.data.log_id) {
-      var currentUser = JSON.parse(localStorage.getItem("schoolmap_current_user") || "null");
-      if (currentUser) {
-        currentUser.logId = data.data.log_id;
-        localStorage.setItem("schoolmap_current_user", JSON.stringify(currentUser));
-        AppState.currentUser = currentUser;
-      }
-    }
-  })
-  .catch(function(err) { console.warn("Failed to save visitor log to DB:", err); });
+  }).catch(err => console.warn("Failed to save visitor log to DB:", err));
 }
 
 function saveGuestTimeOut(guest) {
-  // Update localStorage record
-  let logs = JSON.parse(localStorage.getItem("schoolmap_logs") || "[]");
-  const latest = logs.find((l) => l.name === guest.fullName && !l.time_out);
-  if (latest) {
-    latest.time_out = new Date().toISOString();
-    localStorage.setItem("schoolmap_logs", JSON.stringify(logs));
-  }
-
-  // Update DB record with time_out
-  if (guest.logId) {
-    var now = new Date();
-    var timeOut = now.toTimeString().split(' ')[0];
-    fetch("../backend/api.php?action=visitor_logs&id=" + encodeURIComponent(guest.logId), {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ time_out: timeOut }),
-    }).catch(function(err) { console.warn("Failed to update time_out in DB:", err); });
-  }
+  return guest;
 }
 
 /* ====================== GUEST FLOW ====================== */
+
+function initGuestFlow() {
+  loadCurrentUser();
+
+  const isGuestMode = sessionStorage.getItem("guest_mode") === "true";
+
+  if (isGuestMode) {
+    sessionStorage.removeItem("guest_mode");
+
+    if (!AppState.currentUser || !AppState.currentUser.isGuest) {
+      showGuestLogbookModal();
+    } else {
+      renderUserArea();
+    }
+  } else {
+    renderUserArea();
+  }
+}
+
+function showGuestLogbookModal() {
+  const modal = document.getElementById("guest-logbook-modal");
+  const dateInput = document.getElementById("guest-datetime");
+
+  if (modal) modal.classList.add("active");
+
+  if (dateInput) {
+    const now = new Date();
+    dateInput.value =
+      now.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      }) +
+      " " +
+      now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  }
+}
+
+function handleGuestSubmit(e) {
+  e.preventDefault();
+
+  const name = document.getElementById("guest-name").value.trim();
+  const category = document.getElementById("guest-category").value;
+  const purpose = document.getElementById("guest-purpose").value.trim();
+
+  if (!name || !category) {
+    showToast("Please fill in all required fields.");
+    return;
+  }
+
+  const guestUser = {
+    id: "guest_" + Date.now(),
+    fullName: name,
+    role: category,
+    isGuest: true,
+    category: category,
+    purpose: purpose,
+    time_in: new Date().toISOString(),
+    loggedInAt: new Date().toISOString(),
+  };
+
+  saveCurrentUser(guestUser);
+  saveGuestLog(guestUser);
+  renderUserArea();
+
+  document.getElementById("guest-logbook-modal").classList.remove("active");
+  showToast(`Welcome, ${name}!`);
+  showEntryBanner();
+}
+
+/* ====================== LOGOUT ====================== */
+
+function handleLogout() {
+  const user = AppState.currentUser;
+  if (!user) return;
+
+  if (user.isGuest) {
+    if (confirm("Are you sure you want to log out?")) {
+      saveGuestTimeOut(user);
+      clearCurrentUser();
+      showToast("You have logged out. Thank you for visiting!");
+      setTimeout(() => {
+        window.location.href = "index.html";
+      }, 600);
+    }
+  } else {
+    // Admin logout
+    if (confirm("Are you sure you want to logout?")) {
+      clearCurrentUser();
+      renderUserArea();
+      showToast("You have been logged out.");
+    }
+  }
+}
 
 /* ====================== USER MENU ====================== */
 
@@ -354,6 +457,10 @@ function renderFloorButtons() {
     return;
   }
   var html = "";
+  if (!AppState.floors.length) {
+    container.innerHTML = '<p class="map-empty-note">No floors found in database.</p>';
+    return;
+  }
   AppState.floors.forEach(function (floor) {
     var active = floor.id === AppState.currentFloor ? " active" : "";
     html +=
@@ -375,11 +482,9 @@ function switchFloor(floorId) {
   AppState.currentFloor = floorId;
   AppState.selectedLocation = null;
   renderFloorButtons();
-  updateFloorBadge();
   renderMapCanvas();
   renderPins();
   renderRouteOverlay();
-  updateYouAreHere();
   closeSelectedPanel();
 }
 
@@ -401,19 +506,59 @@ function renderLegendItems() {
   if (!container) {
     return;
   }
-  var html = "";
+  var html =
+    '<button type="button" class="legend-item legend-filter-item' +
+    (AppState.activeLegendFilter === null ? " active" : "") +
+    '" onclick="setLegendFilter(null)" title="Show all legends">' +
+    '<span class="legend-dot legend-icon-chip" style="background:#192A57">' +
+    getLegendSidebarIcon(null) +
+    "</span>" +
+    '<span class="legend-label">All legends</span>' +
+    '<span class="legend-count">' +
+    getCurrentFloorLocations().length +
+    "</span>" +
+    "</button>";
+
+  if (!AppState.legends.length) {
+    container.innerHTML = html + '<p class="map-empty-note">No legends found in database.</p>';
+    return;
+  }
+
   AppState.legends.forEach(function (leg) {
+    var active = String(AppState.activeLegendFilter) === String(leg.id) ? " active" : "";
+    var count = AppState.locations.filter(function (loc) {
+      return String(loc.floor) === String(AppState.currentFloor) && String(loc.legendId) === String(leg.id);
+    }).length;
     html +=
-      '<div class="legend-item">' +
-      '<div class="legend-dot" style="background:' +
+      '<button type="button" class="legend-item legend-filter-item' +
+      active +
+      '" onclick="setLegendFilter(\'' +
+      escAttr(leg.id) +
+      '\')" title="Show only ' +
+      escAttr(leg.label) +
+      '">' +
+      '<span class="legend-dot legend-icon-chip" style="background:' +
       leg.color +
-      '"></div>' +
+      '">' +
+      getLegendSidebarIcon(leg) +
+      "</span>" +
       '<span class="legend-label">' +
       escHtml(leg.label) +
       "</span>" +
-      "</div>";
+      '<span class="legend-count">' +
+      count +
+      "</span>" +
+      "</button>";
   });
   container.innerHTML = html;
+}
+
+function setLegendFilter(legendId) {
+  AppState.activeLegendFilter = legendId === null || legendId === undefined ? null : String(legendId);
+  AppState.selectedLocation = null;
+  closeSelectedPanel();
+  renderLegendItems();
+  renderPins();
 }
 
 function toggleLegend() {
@@ -434,52 +579,64 @@ function toggleLabels(checked) {
 }
 
 function getLocationType(loc) {
-  return loc.type || loc.legendId || "unknown";
+  return loc.legendId || loc.type || "unknown";
+}
+
+function getVisibleFloorLocations() {
+  return AppState.locations.filter(function (loc) {
+    var sameFloor = String(loc.floor) === String(AppState.currentFloor);
+    var sameLegend = AppState.activeLegendFilter === null || String(loc.legendId) === String(AppState.activeLegendFilter);
+    return sameFloor && sameLegend;
+  });
+}
+
+function getCurrentFloorLocations() {
+  return AppState.locations.filter(function (loc) {
+    return String(loc.floor) === String(AppState.currentFloor);
+  });
+}
+
+function getLegendSidebarIcon(legend) {
+  if (!legend) {
+    return '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v4"/><path d="M12 18v4"/><path d="M2 12h4"/><path d="M18 12h4"/></svg>';
+  }
+  return getPinIcon(String(legend.id), 18);
 }
 
 function getLocationTypeLabel(loc) {
   var typeKey = getLocationType(loc);
   var legend = AppState.legends.find(function (l) {
-    return (l.type && l.type === typeKey) || (l.id && l.id === typeKey);
+    return (l.type && String(l.type) === String(typeKey)) || (l.id && String(l.id) === String(typeKey));
   });
   return legend ? legend.label : escHtml(typeKey);
 }
 
 function getStoredFloorImage(floorId) {
-  var images = getStoredFloorImages();
-  return images && images[floorId] ? images[floorId] : "";
+  var floor = AppState.floors.find(function (f) {
+    return String(f.id) === String(floorId);
+  });
+  return floor && floor.image_path ? floor.image_path : "";
 }
 
 /* ===== MAP CANVAS ===== */
 
 function renderMapCanvas() {
-  var container = document.getElementById("map-image-container");
-  if (!container) {
+  var img = document.getElementById("floorImage");
+  if (!img) {
     return;
   }
 
   var imageSrc = getStoredFloorImage(AppState.currentFloor);
-  if (!imageSrc && AppState.currentFloor === 1) {
+  if (!imageSrc && Number(AppState.currentFloor) === 1) {
     imageSrc = "../images/map-ground-floor.png";
   }
 
   if (imageSrc) {
-    container.innerHTML =
-      '<img src="' +
-      escAttr(imageSrc) +
-      '" alt="Floor Plan" class="map-floor-img" draggable="false" />';
+    img.src = imageSrc;
+    img.alt = "Floor Plan";
+    img.hidden = false;
   } else {
-    container.innerHTML =
-      '<div class="map-grid-bg">' +
-      '<svg style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;opacity:0.25">' +
-      '<line x1="50%" y1="10%" x2="50%" y2="90%" stroke="#2d2d2d" stroke-width="1.5" stroke-dasharray="4 4" />' +
-      '<line x1="10%" y1="50%" x2="90%" y2="50%" stroke="#2d2d2d" stroke-width="1.5" stroke-dasharray="4 4" />' +
-      '<rect x="10%" y="10%" width="38%" height="38%" fill="none" stroke="#2d2d2d" stroke-width="1" rx="4" />' +
-      '<rect x="52%" y="10%" width="38%" height="38%" fill="none" stroke="#2d2d2d" stroke-width="1" rx="4" />' +
-      '<rect x="10%" y="52%" width="38%" height="38%" fill="none" stroke="#2d2d2d" stroke-width="1" rx="4" />' +
-      '<rect x="52%" y="52%" width="38%" height="38%" fill="none" stroke="#2d2d2d" stroke-width="1" rx="4" />' +
-      "</svg>" +
-      "</div>";
+    img.hidden = true;
   }
 
   updateFloorBadge();
@@ -487,8 +644,9 @@ function renderMapCanvas() {
 }
 
 function setupMapInteractions() {
-  var zoomContainer = document.getElementById("map-zoom-container");
-  if (!zoomContainer) {
+  var mapStage = document.getElementById("mapStage");
+  var mapCanvas = document.getElementById("mapCanvas");
+  if (!mapStage || !mapCanvas) {
     return;
   }
 
@@ -498,15 +656,15 @@ function setupMapInteractions() {
   var startPanX = 0;
   var startPanY = 0;
 
-  zoomContainer.style.cursor = "grab";
+  mapCanvas.style.cursor = "grab";
 
-  zoomContainer.addEventListener("pointerdown", function (e) {
+  mapCanvas.addEventListener("pointerdown", function (e) {
     if (e.button !== 0) {
       return;
     }
     if (
+      e.target.closest(".pin") ||
       e.target.closest(".map-pin-wrapper") ||
-      e.target.closest(".map-pin-icon") ||
       e.target.closest(".map-pin-label")
     ) {
       return;
@@ -517,45 +675,57 @@ function setupMapInteractions() {
     startY = e.clientY;
     startPanX = AppState.panX || 0;
     startPanY = AppState.panY || 0;
-    zoomContainer.setPointerCapture(e.pointerId);
-    zoomContainer.style.cursor = "grabbing";
+    mapCanvas.setPointerCapture(e.pointerId);
+    mapCanvas.classList.add("panning");
+    mapCanvas.style.cursor = "grabbing";
   });
 
-  zoomContainer.addEventListener("pointermove", function (e) {
+  mapCanvas.addEventListener("pointermove", function (e) {
     if (!isPanning) {
       return;
     }
     e.preventDefault();
-    AppState.panX = startPanX + (e.clientX - startX);
-    AppState.panY = startPanY + (e.clientY - startY);
+    AppState.panX = startPanX + (e.clientX - startX) / AppState.zoom;
+    AppState.panY = startPanY + (e.clientY - startY) / AppState.zoom;
     applyZoom();
   });
 
-  zoomContainer.addEventListener("pointerup", function (e) {
+  mapCanvas.addEventListener("pointerup", function (e) {
     if (!isPanning) {
       return;
     }
     isPanning = false;
-    zoomContainer.releasePointerCapture &&
-      zoomContainer.releasePointerCapture(e.pointerId);
-    zoomContainer.style.cursor = "grab";
+    mapCanvas.releasePointerCapture &&
+      mapCanvas.releasePointerCapture(e.pointerId);
+    mapCanvas.classList.remove("panning");
+    mapCanvas.style.cursor = "grab";
   });
 
-  zoomContainer.addEventListener("pointercancel", function (e) {
+  mapCanvas.addEventListener("pointercancel", function (e) {
     if (!isPanning) {
       return;
     }
     isPanning = false;
-    zoomContainer.releasePointerCapture &&
-      zoomContainer.releasePointerCapture(e.pointerId);
-    zoomContainer.style.cursor = "grab";
+    mapCanvas.releasePointerCapture &&
+      mapCanvas.releasePointerCapture(e.pointerId);
+    mapCanvas.classList.remove("panning");
+    mapCanvas.style.cursor = "grab";
   });
 
-  zoomContainer.addEventListener(
+  mapStage.addEventListener(
     "wheel",
     function (e) {
       e.preventDefault();
-      changeZoom(e.deltaY < 0 ? 0.15 : -0.15);
+      var rect = mapStage.getBoundingClientRect();
+      var cx = e.clientX - rect.left - rect.width / 2;
+      var cy = e.clientY - rect.top - rect.height / 2;
+      var oldZoom = AppState.zoom;
+      var newZoom = Math.min(4, Math.max(0.25, +(oldZoom - e.deltaY * 0.001).toFixed(3)));
+      var zoomRatio = newZoom / oldZoom;
+      AppState.panX = cx + ((AppState.panX || 0) - cx) * zoomRatio;
+      AppState.panY = cy + ((AppState.panY || 0) - cy) * zoomRatio;
+      AppState.zoom = newZoom;
+      applyZoom();
     },
     { passive: false },
   );
@@ -564,14 +734,19 @@ function setupMapInteractions() {
 /* ===== PINS ===== */
 
 function renderPins() {
-  var container = document.getElementById("map-pins");
+  var container = document.getElementById("pinsLayer");
   if (!container) {
     return;
   }
 
-  var floorLocs = AppState.locations.filter(function (l) {
-    return l.floor === AppState.currentFloor;
-  });
+  var floorLocs = getVisibleFloorLocations();
+
+  // During route display, show only origin and destination pins
+  if (AppState.showRoute && AppState.routeFrom && AppState.routeTo) {
+    floorLocs = floorLocs.filter(function(loc) {
+      return String(loc.id) === String(AppState.routeFrom) || String(loc.id) === String(AppState.routeTo);
+    });
+  }
 
   var colorMap = getColorMap();
   var html = "";
@@ -581,67 +756,111 @@ function renderPins() {
     var color = colorMap[locType] || "#192A57";
     var isSelected =
       AppState.selectedLocation && AppState.selectedLocation.id === loc.id;
-    var size = AppState.currentFloor === 1 ? 28 : 30;
-    var iconSize = size - 4;
+    var iconSize = 14;
     var selectedClass = isSelected ? " selected" : "";
-
-    var pulseHtml = "";
-    if (isSelected) {
-      pulseHtml =
-        '<div class="map-pin-pulse" style="width:' +
-        (size + 18) +
-        "px;height:" +
-        (size + 18) +
-        "px;top:" +
-        -(size + 18 - size) / 2 +
-        "px;left:" +
-        -(size + 18 - size) / 2 +
-        "px;background:" +
-        color +
-        '33;"></div>';
-    }
+    var hoverAttrs = AppState.showRoute
+      ? ""
+      : "onmouseenter=\"showPinTooltip(event,'" +
+        loc.id +
+        "')\" " +
+        "onmousemove=\"movePinTooltip(event)\" " +
+        "onmouseleave=\"hidePinTooltip()\" ";
 
     var labelHtml = "";
     if (AppState.showLabels) {
       labelHtml =
-        '<span class="map-pin-label">' + escHtml(loc.name) + "</span>";
+        '<span class="map-pin-label map-public-pin-label" style="left:' +
+        loc.x +
+        "%;top:" +
+        loc.y +
+        '%;">' +
+        escHtml(loc.name) +
+        "</span>";
     }
 
     html +=
-      '<div class="map-pin-wrapper' +
+      '<div class="pin map-public-pin' +
       selectedClass +
       '" ' +
       'style="left:' +
       loc.x +
       "%;top:" +
       loc.y +
-      '%;" ' +
+      "%;background:" +
+      color +
+      ';" ' +
       "onclick=\"selectPin('" +
       loc.id +
       "')\" " +
+      hoverAttrs +
       'title="' +
       escHtml(loc.name) +
       '">' +
-      pulseHtml +
-      '<div class="map-pin-icon" style="width:' +
-      size +
-      "px;height:" +
-      size +
-      "px;background:" +
-      color +
-      (isSelected ? ";box-shadow:0 0 0 3px white,0 0 0 5px " + color : "") +
-      '">' +
       getPinIcon(getLocationType(loc), iconSize) +
       "</div>" +
-      labelHtml +
-      "</div>";
+      labelHtml;
   });
 
   container.innerHTML = html;
 }
+
+function getPinTooltipHtml(loc) {
+  var html =
+    '<strong>' + escHtml(loc.name) + '</strong>' +
+    '<span>' + escHtml(getLocationTypeLabel(loc)) + '</span>';
+
+  if (loc.image) {
+    html +=
+      '<img class="pin-tooltip-image" src="' +
+      escAttr(loc.image) +
+      '" alt="' +
+      escAttr(loc.name) +
+      ' image" />';
+  }
+
+  return html;
+}
+
+function positionPinTooltip(event) {
+  var tooltip = document.getElementById("pinTooltip");
+  var stage = document.getElementById("mapStage");
+  if (!tooltip || !stage) {
+    return;
+  }
+  var rect = stage.getBoundingClientRect();
+  var x = event.clientX - rect.left;
+  var y = event.clientY - rect.top;
+  tooltip.style.left = x + "px";
+  tooltip.style.top = Math.max(0, y - 12) + "px";
+}
+
+function showPinTooltip(event, locId) {
+  var loc = AppState.locations.find(function (l) {
+    return l.id === locId;
+  });
+  var tooltip = document.getElementById("pinTooltip");
+  if (!loc || !tooltip) {
+    return;
+  }
+  tooltip.innerHTML = getPinTooltipHtml(loc);
+  tooltip.classList.add("show");
+  positionPinTooltip(event);
+}
+
+function movePinTooltip(event) {
+  positionPinTooltip(event);
+}
+
+function hidePinTooltip() {
+  var tooltip = document.getElementById("pinTooltip");
+  if (tooltip) {
+    tooltip.classList.remove("show");
+  }
+}
+
 function getPinIcon(type, size) {
   var legend = AppState.legends.find(function (l) {
-    return (l.type && l.type === type) || (l.id && l.id === type);
+    return (l.type && String(l.type) === String(type)) || (l.id && String(l.id) === String(type));
   });
 
   if (legend && legend.iconUrl) {
@@ -657,6 +876,18 @@ function getPinIcon(type, size) {
       "px;height:" +
       size +
       'px;object-fit:contain;display:block" alt="" />'
+    );
+  }
+
+  function iconSvg(paths) {
+    return (
+      '<svg xmlns="http://www.w3.org/2000/svg" width="' +
+      size +
+      '" height="' +
+      size +
+      '" fill="none" viewBox="0 0 24 24" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">' +
+      paths +
+      "</svg>"
     );
   }
 
@@ -788,6 +1019,46 @@ function getPinIcon(type, size) {
       size +
       '" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3" fill="white"/></svg>',
   };
+  Object.assign(icons, {
+    Home: iconSvg('<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>'),
+    Star: iconSvg('<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>'),
+    Toilet: iconSvg('<path d="M3 3h8v4H3z"/><path d="M7 7v2a4 4 0 0 0 8 0V7"/><path d="M11 13v7"/><path d="M8 20h6"/>'),
+    Building2: iconSvg('<path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18"/><path d="M6 12H4a2 2 0 0 0-2 2v8"/><path d="M18 9h2a2 2 0 0 1 2 2v11"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/>'),
+    School: iconSvg('<path d="M2 22h20"/><path d="M6 18V9l6-4 6 4v9"/><path d="M10 22v-6h4v6"/><path d="M8 12h.01"/><path d="M16 12h.01"/>'),
+    GraduationCap: iconSvg('<path d="M22 10 12 5 2 10l10 5 10-5Z"/><path d="M6 12v5c3 2 9 2 12 0v-5"/><path d="M22 10v6"/>'),
+    FlaskConical: iconSvg('<path d="M10 2v7.3L4.4 19a2 2 0 0 0 1.7 3h11.8a2 2 0 0 0 1.7-3L14 9.3V2"/><path d="M8.5 2h7"/><path d="M7 16h10"/>'),
+    Monitor: iconSvg('<rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/>'),
+    Printer: iconSvg('<path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/><path d="M18 12h.01"/>'),
+    Wifi: iconSvg('<path d="M5 13a10 10 0 0 1 14 0"/><path d="M8.5 16.5a5 5 0 0 1 7 0"/><path d="M2 9a15 15 0 0 1 20 0"/><path d="M12 20h.01"/>'),
+    Phone: iconSvg('<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 2 .7 2.8a2 2 0 0 1-.4 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2Z"/>'),
+    Info: iconSvg('<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>'),
+    HelpCircle: iconSvg('<circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 1 1 5.8 1c-.6 1.1-2 1.4-2.6 2.4-.2.3-.3.7-.3 1.1"/><path d="M12 17h.01"/>'),
+    Shield: iconSvg('<path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V5l8-3 8 3v8Z"/>'),
+    HeartPulse: iconSvg('<path d="M19.5 13.6 12 21l-7.5-7.4A5 5 0 0 1 12 7a5 5 0 0 1 7.5 6.6Z"/><path d="M3 12h4l2-3 3 6 2-3h7"/>'),
+    Cross: iconSvg('<path d="M11 2h2v7h7v2h-7v11h-2V11H4V9h7z"/>'),
+    Accessibility: iconSvg('<circle cx="12" cy="4" r="2"/><path d="M4 10h16"/><path d="M12 6v8"/><path d="m8 22 4-8 4 8"/>'),
+    ParkingCircle: iconSvg('<circle cx="12" cy="12" r="10"/><path d="M10 16V8h3a2.5 2.5 0 0 1 0 5h-3"/>'),
+    Bus: iconSvg('<path d="M6 17h12l1-5V5a3 3 0 0 0-3-3H8a3 3 0 0 0-3 3v7l1 5Z"/><path d="M8 22h.01"/><path d="M16 22h.01"/><path d="M5 9h14"/><path d="M8 13h.01"/><path d="M16 13h.01"/>'),
+    Coffee: iconSvg('<path d="M4 8h14v6a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4Z"/><path d="M18 9h1a3 3 0 0 1 0 6h-1"/><path d="M6 2v2"/><path d="M10 2v2"/><path d="M14 2v2"/>'),
+    Wrench: iconSvg('<path d="M14.7 6.3a4 4 0 0 0-5 5L3 18v3h3l6.7-6.7a4 4 0 0 0 5-5l-2.4 2.4-2-2 2.4-2.4Z"/>'),
+    Settings: iconSvg('<path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V22a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1A2 2 0 1 1 4.2 18l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1A2 2 0 1 1 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3h.1A1.7 1.7 0 0 0 10 3V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1A2 2 0 1 1 19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9v.1A1.7 1.7 0 0 0 21 10h.1a2 2 0 1 1 0 4H21a1.7 1.7 0 0 0-1.6 1Z"/>'),
+    Archive: iconSvg('<rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/>'),
+    Landmark: iconSvg('<path d="M3 22h18"/><path d="M6 18V9"/><path d="M10 18V9"/><path d="M14 18V9"/><path d="M18 18V9"/><path d="m12 2 9 5H3Z"/>'),
+    Navigation: iconSvg('<polygon points="3 11 22 2 13 21 11 13 3 11"/>'),
+    Compass: iconSvg('<circle cx="12" cy="12" r="10"/><polygon points="16.2 7.8 14 14 7.8 16.2 10 10 16.2 7.8"/>'),
+    Clock: iconSvg('<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>'),
+    Calendar: iconSvg('<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/>'),
+    Users: iconSvg('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9"/><path d="M16 3.1a4 4 0 0 1 0 7.8"/>'),
+    ClipboardList: iconSvg('<rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M8 12h8"/><path d="M8 16h8"/><path d="M8 8h.01"/>'),
+    FileCheck: iconSvg('<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="m9 15 2 2 4-4"/>'),
+    Package: iconSvg('<path d="m21 8-9-5-9 5 9 5 9-5Z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/>'),
+    KeyRound: iconSvg('<circle cx="7.5" cy="15.5" r="5.5"/><path d="m12 12 9-9"/><path d="m16 7 2 2"/><path d="m19 4 2 2"/>'),
+    Lock: iconSvg('<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>'),
+    Bell: iconSvg('<path d="M18 8a6 6 0 1 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/>'),
+    Megaphone: iconSvg('<path d="m3 11 18-5v12L3 13Z"/><path d="M11.6 16.8a3 3 0 0 1-5.8-1.6"/>'),
+    Camera: iconSvg('<path d="M14.5 4 16 7h4a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h4l1.5-3Z"/><circle cx="12" cy="13" r="3"/>'),
+    Image: iconSvg('<rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/>'),
+  });
 
   var iconKey = legend && legend.icon ? legend.icon : type;
   return icons[iconKey] || icons[type] || icons.MapPin;
@@ -829,7 +1100,7 @@ function showSelectedPanel(loc) {
     '<div class="info-panel-icon" style="background:' +
     color +
     ';margin-top:2px">' +
-    '<span style="width:8px;height:8px;background:white;border-radius:50%;display:block"></span>' +
+    getPinIcon(locType, 18) +
     "</div>" +
     '<div style="flex:1;min-width:0">' +
     '<p class="info-panel-title">' +
@@ -840,6 +1111,9 @@ function showSelectedPanel(loc) {
     " • Floor " +
     loc.floor +
     "</p>" +
+    (loc.image
+      ? '<img class="info-panel-pin-image" src="' + escAttr(loc.image) + '" alt="' + escAttr(loc.name) + ' image"/>'
+      : "") +
     (loc.description
       ? '<p class="info-panel-desc">' + escHtml(loc.description) + "</p>"
       : "") +
@@ -1022,154 +1296,274 @@ function showRoute() {
   if (!AppState.routeFrom || !AppState.routeTo) {
     return;
   }
-  AppState.showRoute = true;
 
   var fromLoc = AppState.locations.find(function (l) {
-    return String(l.id) === String(AppState.routeFrom);
+    return l.id === AppState.routeFrom;
   });
   var toLoc = AppState.locations.find(function (l) {
-    return String(l.id) === String(AppState.routeTo);
+    return l.id === AppState.routeTo;
   });
 
   if (!fromLoc || !toLoc) {
     return;
   }
 
-  if (String(fromLoc.floor) !== String(AppState.currentFloor)) {
+  var routeMatch = findSavedRoute(AppState.routeFrom, AppState.routeTo);
+  if (!routeMatch || !routeMatch.route || !routeMatch.route.points.length) {
+    AppState.showRoute = false;
+    clearPublicRouteOverlay();
+    renderPins();
+    showToast("No saved route path found for these pins.");
+    return;
+  }
+
+  AppState.activeRoute = routeMatch.route;
+  AppState.activeRouteReversed = routeMatch.reversed;
+  AppState.showRoute = true;
+
+  if (fromLoc.floor !== AppState.currentFloor) {
     switchFloor(fromLoc.floor);
   }
 
+  closeSelectedPanel();
+  hidePinTooltip();
+  renderPins();
   renderRouteOverlay();
-  showRouteInfoPanel(fromLoc, toLoc);
+}
+
+function resetRoute() {
+  hideRestartRouteConfirm();
+
+  // Clear route state
+  AppState.showRoute = false;
+  AppState.routeFrom = null;
+  AppState.routeTo = null;
+  AppState.activeRoute = null;
+  AppState.activeRouteReversed = false;
+  AppState.selectedLocation = null;
+
+  // Reset route selectors
+  var fromSelect = document.getElementById('route-from');
+  var toSelect = document.getElementById('route-to');
+  if (fromSelect) fromSelect.value = '';
+  if (toSelect) toSelect.value = '';
+
+  clearPublicRouteOverlay();
+
+  // Re-render all pins and UI
+  renderPins();
+  updateFloorBadge();
+}
+
+function showRestartRouteConfirm() {
+  if (!AppState.showRoute || !AppState.routeFrom || !AppState.routeTo) {
+    hideRestartRouteConfirm();
+    showToast("There is no route selected.");
+    return;
+  }
+
+  var panel = document.getElementById("restart-route-confirm");
+  if (!panel) {
+    resetRoute();
+    return;
+  }
+  panel.hidden = false;
+}
+
+function hideRestartRouteConfirm() {
+  var panel = document.getElementById("restart-route-confirm");
+  if (panel) {
+    panel.hidden = true;
+  }
+}
+
+function confirmRestartRoute() {
+  resetRoute();
+}
+
+function findSavedRoute(fromId, toId) {
+  var routes = Array.isArray(AppState.routes) ? AppState.routes : [];
+  var forward = routes.find(function (route) {
+    return !route.archived &&
+      String(route.originId) === String(fromId) &&
+      String(route.destinationId) === String(toId);
+  });
+  if (forward) {
+    return { route: forward, reversed: false };
+  }
+
+  var reverse = routes.find(function (route) {
+    return !route.archived &&
+      String(route.originId) === String(toId) &&
+      String(route.destinationId) === String(fromId);
+  });
+  return reverse ? { route: reverse, reversed: true } : null;
+}
+
+function getLocationById(locId) {
+  return AppState.locations.find(function (loc) {
+    return String(loc.id) === String(locId);
+  }) || null;
+}
+
+function getRouteDisplayPoints(route, reversed) {
+  var fromLoc = getLocationById(AppState.routeFrom);
+  var toLoc = getLocationById(AppState.routeTo);
+  if (!route || !fromLoc || !toLoc) {
+    return [];
+  }
+
+  var savedPoints = Array.isArray(route.points) ? route.points.slice() : [];
+  if (reversed) {
+    savedPoints.reverse();
+  }
+
+  var points = [{
+    x: fromLoc.x,
+    y: fromLoc.y,
+    floor: fromLoc.floor,
+    type: "origin",
+  }];
+
+  savedPoints.forEach(function (point) {
+    points.push({
+      x: Number(point.x),
+      y: Number(point.y),
+      floor: Number(point.floor ?? route.floor ?? fromLoc.floor),
+      type: "point",
+    });
+  });
+
+  points.push({
+    x: toLoc.x,
+    y: toLoc.y,
+    floor: toLoc.floor,
+    type: "destination",
+  });
+
+  return points;
+}
+
+function getRouteSegments(points) {
+  var segments = [];
+  for (var i = 0; i < points.length - 1; i++) {
+    var start = points[i];
+    var end = points[i + 1];
+    segments.push({
+      start: start,
+      end: end,
+      floor: start.floor,
+      sameFloor: String(start.floor) === String(end.floor),
+    });
+  }
+  return segments;
+}
+
+function clearPublicRouteOverlay() {
+  var svg = document.getElementById("routeEditorSvg");
+  var pointsLayer = document.getElementById("routePointsLayer");
+  var walkerLayer = document.getElementById("routeWalkerLayer");
+  if (svg) {
+    svg.innerHTML = "";
+    svg.style.display = "none";
+  }
+  if (pointsLayer) {
+    pointsLayer.innerHTML = "";
+    pointsLayer.style.display = "none";
+  }
+  if (walkerLayer) {
+    walkerLayer.innerHTML = "";
+    walkerLayer.style.display = "none";
+  }
 }
 
 function renderRouteOverlay() {
-  var svg = document.getElementById("route-svg");
-  if (!svg) {
+  var svg = document.getElementById("routeEditorSvg");
+  var pointsLayer = document.getElementById("routePointsLayer");
+  var walkerLayer = document.getElementById("routeWalkerLayer");
+  if (!svg || !pointsLayer || !walkerLayer) {
     return;
   }
 
-  if (!AppState.showRoute) {
-    svg.style.display = "none";
+  clearPublicRouteOverlay();
+
+  if (!AppState.showRoute || !AppState.routeFrom || !AppState.routeTo) {
     return;
   }
 
-  var fromLoc = AppState.locations.find(function(l) {
-    return String(l.id) === String(AppState.routeFrom);
+  var match = findSavedRoute(AppState.routeFrom, AppState.routeTo);
+  var route = match ? match.route : null;
+  if (match) {
+    AppState.activeRoute = match.route;
+    AppState.activeRouteReversed = match.reversed;
+  }
+
+  if (!route || !route.points.length) {
+    return;
+  }
+
+  var displayPoints = getRouteDisplayPoints(route, !!AppState.activeRouteReversed);
+  var segments = getRouteSegments(displayPoints).filter(function (segment) {
+    return segment.sameFloor && String(segment.floor) === String(AppState.currentFloor);
   });
-  var toLoc = AppState.locations.find(function(l) {
-    return String(l.id) === String(AppState.routeTo);
+
+  if (!segments.length) {
+    return;
+  }
+
+  var fromLoc = getLocationById(AppState.routeFrom);
+  var colorMap = getColorMap();
+  var routeColor = fromLoc ? colorMap[getLocationType(fromLoc)] || "#2d5da1" : "#2d5da1";
+
+  svg.style.display = "block";
+  svg.setAttribute("viewBox", "0 0 100 100");
+  svg.setAttribute("preserveAspectRatio", "none");
+  pointsLayer.style.display = "block";
+
+  segments.forEach(function (segment) {
+    var line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    line.setAttribute("x1", String(segment.start.x));
+    line.setAttribute("y1", String(segment.start.y));
+    line.setAttribute("x2", String(segment.end.x));
+    line.setAttribute("y2", String(segment.end.y));
+    line.setAttribute("stroke", routeColor);
+    line.setAttribute("stroke-width", "6");
+    line.setAttribute("stroke-linecap", "round");
+    line.setAttribute("stroke-linejoin", "round");
+    line.setAttribute("stroke-opacity", "0.95");
+    line.classList.add("route-line", "route-line-public");
+    svg.appendChild(line);
   });
 
-  if (!fromLoc || !toLoc ||
-      (fromLoc.floor !== AppState.currentFloor && toLoc.floor !== AppState.currentFloor)) {
-    svg.style.display = "none";
+  renderRouteEndpointDot(pointsLayer, displayPoints[0], "route-endpoint-start");
+  renderRouteEndpointDot(pointsLayer, displayPoints[displayPoints.length - 1], "route-endpoint-finish");
+  renderFixedRoutePinTooltip(pointsLayer, getLocationById(AppState.routeFrom), "route-fixed-tooltip-start");
+  renderFixedRoutePinTooltip(pointsLayer, getLocationById(AppState.routeTo), "route-fixed-tooltip-finish");
+}
+
+function renderRouteEndpointDot(layer, point, className) {
+  if (!point || String(point.floor) !== String(AppState.currentFloor)) {
     return;
   }
 
-  svg.style.display = "";
+  var dot = document.createElement("div");
+  dot.className = "route-endpoint-dot " + className;
+  dot.style.left = point.x + "%";
+  dot.style.top = point.y + "%";
+  layer.appendChild(dot);
+}
 
-  var routeLine = document.getElementById("route-line");
-  var fromDot = document.getElementById("route-from-dot");
-  var toDot = document.getElementById("route-to-dot");
-
-  // Remove any previously added polyline
-  var oldPoly = document.getElementById("route-polyline");
-  if (oldPoly) { oldPoly.parentNode.removeChild(oldPoly); }
-
-  // Find a saved route with waypoints matching this from/to pair
-  var matchedRoute = null;
-  if (AppState.routes && AppState.routes.length) {
-    matchedRoute = AppState.routes.find(function(r) {
-      var oId = String(r.originId);
-      var dId = String(r.destinationId);
-      var fId = String(AppState.routeFrom);
-      var tId = String(AppState.routeTo);
-      return (oId === fId && dId === tId) || (oId === tId && dId === fId);
-    });
-  }
-
-  if (matchedRoute && matchedRoute.points && matchedRoute.points.length > 0) {
-    // Build ordered path for the current floor
-    var reversed = String(matchedRoute.originId) === String(AppState.routeTo);
-    var pts = matchedRoute.points
-      .filter(function(p) { return !p.floor || p.floor == AppState.currentFloor; })
-      .sort(function(a, b) { return (a.pointOrder || 0) - (b.pointOrder || 0); });
-
-    var pathParts = [];
-    if (fromLoc.floor === AppState.currentFloor) {
-      pathParts.push(fromLoc.x + "% " + fromLoc.y + "%");
-    }
-    var orderedPts = reversed ? pts.slice().reverse() : pts;
-    orderedPts.forEach(function(p) { pathParts.push(p.x + "% " + p.y + "%"); });
-    if (toLoc.floor === AppState.currentFloor) {
-      pathParts.push(toLoc.x + "% " + toLoc.y + "%");
-    }
-
-    if (pathParts.length >= 2) {
-      // Draw polyline for multi-point route, hide the straight line
-      if (routeLine) { routeLine.setAttribute("x1", "-999"); }
-      var poly = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
-      poly.id = "route-polyline";
-      poly.setAttribute("points", pathParts.join(" "));
-      poly.setAttribute("fill", "none");
-      poly.setAttribute("stroke", "#C24322");
-      poly.setAttribute("stroke-width", "3.5");
-      poly.setAttribute("stroke-dasharray", "8 4");
-      poly.setAttribute("stroke-linecap", "round");
-      poly.setAttribute("stroke-linejoin", "round");
-      svg.insertBefore(poly, svg.firstChild);
-    }
-
-    if (fromDot && fromLoc.floor === AppState.currentFloor) {
-      fromDot.setAttribute("cx", fromLoc.x + "%");
-      fromDot.setAttribute("cy", fromLoc.y + "%");
-      fromDot.style.display = "";
-    } else if (fromDot) {
-      fromDot.style.display = "none";
-    }
-    if (toDot && toLoc.floor === AppState.currentFloor) {
-      toDot.setAttribute("cx", toLoc.x + "%");
-      toDot.setAttribute("cy", toLoc.y + "%");
-      toDot.style.display = "";
-    } else if (toDot) {
-      toDot.style.display = "none";
-    }
+function renderFixedRoutePinTooltip(layer, loc, className) {
+  if (!loc || String(loc.floor) !== String(AppState.currentFloor)) {
     return;
   }
 
-  // Fallback: straight line between origin and destination
-  if (fromLoc.floor === AppState.currentFloor && toLoc.floor === AppState.currentFloor) {
-    if (routeLine) {
-      routeLine.setAttribute("x1", fromLoc.x + "%");
-      routeLine.setAttribute("y1", fromLoc.y + "%");
-      routeLine.setAttribute("x2", toLoc.x + "%");
-      routeLine.setAttribute("y2", toLoc.y + "%");
-    }
-    if (fromDot) {
-      fromDot.setAttribute("cx", fromLoc.x + "%");
-      fromDot.setAttribute("cy", fromLoc.y + "%");
-      fromDot.style.display = "";
-    }
-    if (toDot) {
-      toDot.setAttribute("cx", toLoc.x + "%");
-      toDot.setAttribute("cy", toLoc.y + "%");
-      toDot.style.display = "";
-    }
-  } else if (fromLoc.floor === AppState.currentFloor) {
-    if (routeLine) {
-      routeLine.setAttribute("x1", fromLoc.x + "%");
-      routeLine.setAttribute("y1", fromLoc.y + "%");
-      routeLine.setAttribute("x2", "50%");
-      routeLine.setAttribute("y2", "90%");
-    }
-    if (fromDot) {
-      fromDot.setAttribute("cx", fromLoc.x + "%");
-      fromDot.setAttribute("cy", fromLoc.y + "%");
-      fromDot.style.display = "";
-    }
-    if (toDot) { toDot.style.display = "none"; }
-  }
+  var tooltip = document.createElement("div");
+  tooltip.className = "pin-tooltip route-fixed-tooltip show " + className;
+  tooltip.style.left = loc.x + "%";
+  tooltip.style.top = loc.y + "%";
+  tooltip.innerHTML = getPinTooltipHtml(loc);
+  layer.appendChild(tooltip);
 }
 
 function showRouteInfoPanel(fromLoc, toLoc) {
@@ -1180,21 +1574,17 @@ function showRouteInfoPanel(fromLoc, toLoc) {
   }
 
   var html =
-    '<div class="route-info-row">' +
-    '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" fill="#15803d" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/></svg>' +
-    "<span><strong>From:</strong> " +
-    escHtml(fromLoc.name) +
-    "</span>" +
-    "</div>" +
-    '<div class="route-info-row">' +
-    '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" fill="#C24322" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/></svg>' +
-    "<span><strong>To:</strong> " +
-    escHtml(toLoc.name) +
-    "</span>" +
-    "</div>";
+    '<div style="margin-bottom: 16px;">' +
+    getPinTooltipHtml(fromLoc) +
+    '</div>';
+
+  html +=
+    '<div style="margin-bottom: 8px;">' +
+    getPinTooltipHtml(toLoc) +
+    '</div>';
 
   if (fromLoc.floor !== toLoc.floor) {
-    html += '<p class="route-warn">⚠ Different floors! Use stairwell.</p>';
+    html += '<p class="route-warn" style="margin-top: 12px; font-size: 12px; color: #C24322;">⚠ Different floors! Use stairwell.</p>';
   }
 
   content.innerHTML = html;
@@ -1202,21 +1592,16 @@ function showRouteInfoPanel(fromLoc, toLoc) {
 }
 
 function closeRoutePanel() {
-  var panel = document.getElementById("route-info-panel");
-  if (panel) {
-    panel.style.display = "none";
-  }
   AppState.showRoute = false;
-  var svg = document.getElementById("route-svg");
-  if (svg) {
-    svg.style.display = "none";
-  }
+  AppState.activeRoute = null;
+  AppState.activeRouteReversed = false;
+  clearPublicRouteOverlay();
 }
 
 /* ===== ZOOM ===== */
 
 function changeZoom(delta) {
-  AppState.zoom = Math.min(2.5, Math.max(0.5, AppState.zoom + delta));
+  AppState.zoom = Math.min(4, Math.max(0.25, AppState.zoom + delta));
   applyZoom();
 }
 
@@ -1225,12 +1610,19 @@ function resetZoom() {
   applyZoom();
 }
 
+function restoreMap() {
+  AppState.zoom = 1;
+  AppState.panX = 0;
+  AppState.panY = 0;
+  applyZoom();
+}
+
 function applyZoom() {
-  var container = document.getElementById("map-zoom-container");
-  if (container) {
+  var canvas = document.getElementById("mapCanvas");
+  if (canvas) {
     var x = AppState.panX || 0;
     var y = AppState.panY || 0;
-    container.style.transform =
+    canvas.style.transform =
       "translate(calc(-50% + " +
       x +
       "px), calc(-50% + " +
@@ -1238,7 +1630,12 @@ function applyZoom() {
       "px)) scale(" +
       AppState.zoom +
       ")";
-    container.style.transformOrigin = "center center";
+    canvas.style.transformOrigin = "center center";
+  }
+  
+  var zoomLabel = document.getElementById("zoomLabel");
+  if (zoomLabel) {
+    zoomLabel.textContent = Math.round(AppState.zoom * 100) + "%";
   }
 }
 
@@ -1252,6 +1649,22 @@ function showEntryBanner() {
   showEntryBanner._hideTimer = setTimeout(function () {
     banner.classList.remove("show");
   }, 2600);
+}
+
+function showEntryBannerIfRequested() {
+  var shouldShow = false;
+  try {
+    shouldShow = sessionStorage.getItem("show_map_entry_banner") === "true";
+    if (shouldShow) {
+      sessionStorage.removeItem("show_map_entry_banner");
+    }
+  } catch (err) {
+    shouldShow = false;
+  }
+
+  if (shouldShow) {
+    requestAnimationFrame(showEntryBanner);
+  }
 }
 
 /* ===== YOU ARE HERE ===== */
@@ -1268,63 +1681,6 @@ function updateYouAreHere() {
     el.style.left = "50%";
     el.style.top = "85%";
   }
-}
-
-/* ===== RECOMMENDATIONS ===== */
-
-function renderRecommendations() {
-  var container = document.getElementById("rec-bar-items");
-  if (!container) {
-    return;
-  }
-
-  var colorMap = getColorMap();
-  var html = "";
-
-  RECOMMENDATIONS.forEach(function (rec) {
-    var loc = AppState.locations.find(function (l) {
-      return l.id === rec.id;
-    });
-    if (!loc) {
-      return;
-    }
-    var color = colorMap[loc.type] || "#192A57";
-    html +=
-      '<button class="rec-item" onclick="selectRecItem(\'' +
-      loc.id +
-      "')\">" +
-      '<div class="rec-dot" style="background:' +
-      color +
-      '"></div>' +
-      "<div>" +
-      '<div class="rec-name">' +
-      escHtml(loc.name) +
-      "</div>" +
-      '<div class="rec-reason">' +
-      escHtml(rec.reason) +
-      "</div>" +
-      "</div>" +
-      "</button>";
-  });
-
-  container.innerHTML =
-    html ||
-    "<span style='font-size:13px;color:#2d2d2d66'>No recommendations available</span>";
-}
-
-function selectRecItem(locId) {
-  var loc = AppState.locations.find(function (l) {
-    return l.id === locId;
-  });
-  if (!loc) {
-    return;
-  }
-  if (loc.floor !== AppState.currentFloor) {
-    switchFloor(loc.floor);
-  }
-  AppState.selectedLocation = loc;
-  showSelectedPanel(loc);
-  renderPins();
 }
 
 /* ===== SIDEBAR ===== */
@@ -1353,18 +1709,6 @@ function initGuestFlow() {
   } else {
     renderUserArea();
   }
-}
-
-var _datetimeClockInterval = null;
-
-function updateGuestDatetime() {
-  var dateInput = document.getElementById("guest-datetime");
-  if (!dateInput) return;
-  var now = new Date();
-  dateInput.value =
-    now.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) +
-    " " +
-    now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", second: "2-digit" });
 }
 
 function showGuestLogbookModal() {
@@ -1396,17 +1740,10 @@ function showGuestLogbookModal() {
 
   const form = document.getElementById("guest-logbook-form");
   form.onsubmit = handleGuestSubmit;
-
-  // Start live clock for Time & Date field
-  if (_datetimeClockInterval) clearInterval(_datetimeClockInterval);
-  updateGuestDatetime();
-  _datetimeClockInterval = setInterval(updateGuestDatetime, 1000);
 }
 
 function handleGuestSubmit(e) {
   e.preventDefault();
-
-  if (_datetimeClockInterval) { clearInterval(_datetimeClockInterval); _datetimeClockInterval = null; }
 
   const name = document.getElementById("guest-name").value.trim();
   const category = document.getElementById("guest-category").value;

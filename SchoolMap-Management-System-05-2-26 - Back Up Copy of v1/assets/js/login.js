@@ -4,7 +4,16 @@
    ========================================================= */
 "use strict";
 
-var API_BASE = "../backend/api.php";
+var LOCALHOST_APP_BASE = "http://localhost/SCHOOL%20MAPS/REPO/School-Map-Management-System/SchoolMap-Management-System-05-2-26%20-%20Back%20Up%20Copy%20of%20v1/html/";
+var LOCALHOST_API_BASE = "http://localhost/SCHOOL%20MAPS/REPO/School-Map-Management-System/SchoolMap-Management-System-05-2-26%20-%20Back%20Up%20Copy%20of%20v1/backend/api.php";
+
+if (window.location.protocol === "file:") {
+  window.location.replace(LOCALHOST_APP_BASE + "login.html");
+}
+
+var API_BASE = window.location.protocol === "file:"
+  ? LOCALHOST_API_BASE
+  : (typeof getApiBase === "function" ? getApiBase() : "../backend/api.php");
 
 document.addEventListener("DOMContentLoaded", function() {
   if (typeof ensureAdminUser === "function") {
@@ -24,7 +33,11 @@ function resetLoginForm() {
 
 async function apiLogin(identifier, password) {
   try {
-    var response = await fetch(API_BASE + "?action=login", {
+    var loginUrl = window.location.protocol === "file:"
+      ? LOCALHOST_API_BASE + "?action=login"
+      : (typeof apiUrl === "function" ? apiUrl("login") : API_BASE + "?action=login");
+
+    var response = await fetch(loginUrl, {
       method: "POST",
       credentials: "same-origin",
       headers: {
@@ -46,6 +59,7 @@ async function apiLogin(identifier, password) {
       payload: payload
     };
   } catch (err) {
+    console.warn("Login API connection failed:", err);
     return {
       ok: false,
       status: 0,

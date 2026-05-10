@@ -21,56 +21,19 @@ var APP_DATA_VERSION = "schoolmap_data_v3";
 
 var DEFAULT_FLOORS = [
   { id: 1, name: "Ground Floor", label: "1F" },
-  { id: 2, name: "2nd Floor", label: "2F" },
-  { id: 3, name: "3rd Floor", label: "3F" },
 ];
 
-var DEFAULT_LEGENDS = [
-  { id: "classroom", type: "classroom", label: "Classroom", color: "#192A57" },
-  {
-    id: "office",
-    type: "office",
-    label: "VP / Admin Office",
-    color: "#8F3347",
-  },
-  { id: "admin", type: "admin", label: "Admin / Registrar", color: "#C24322" },
-  { id: "library", type: "library", label: "Library", color: "#2d5da1" },
-  { id: "cafeteria", type: "cafeteria", label: "Cafeteria", color: "#b45309" },
-  { id: "gym", type: "gym", label: "Gymnasium", color: "#15803d" },
-  { id: "restroom", type: "restroom", label: "Restroom", color: "#6b7280" },
-  { id: "stairwell", type: "stairwell", label: "Stairwell", color: "#7c3aed" },
-  {
-    id: "entrance",
-    type: "entrance",
-    label: "Entrance / Exit",
-    color: "#0891b2",
-  },
-  {
-    id: "emergency",
-    type: "emergency",
-    label: "Emergency Exit",
-    color: "#dc2626",
-  },
-];
+var DEFAULT_LEGENDS = [];
 
 var DEFAULT_USERS = [];
 
 var DEFAULT_LOCATIONS = [];
 
-var LOCATION_TYPES = [
-  "classroom",
-  "office",
-  "admin",
-  "library",
-  "cafeteria",
-  "gym",
-  "restroom",
-  "stairwell",
-  "entrance",
-  "emergency",
-];
+var LOCATION_TYPES = [];
 
 var RECOMMENDATIONS = [];
+var APP_API_BASE = "../backend/api.php";
+var APP_LOCALHOST_API_BASE = "http://localhost/SCHOOL%20MAPS/REPO/School-Map-Management-System/SchoolMap-Management-System-05-2-26%20-%20Back%20Up%20Copy%20of%20v1/backend/api.php";
 
 /* =========================================================
    APPLICATION STATE
@@ -87,6 +50,7 @@ var AppState = {
   selectedLocation: null,
   showLabels: true,
   showLegend: true,
+  activeLegendFilter: null,
   routeFrom: "",
   routeTo: "",
   showRoute: false,
@@ -107,31 +71,15 @@ var AppState = {
    ========================================================= */
 
 function storageGet(key, defaultValue) {
-  try {
-    var raw = localStorage.getItem(key);
-    if (raw === null || raw === undefined) {
-      return typeof defaultValue === "function" ? defaultValue() : defaultValue;
-    }
-    return JSON.parse(raw);
-  } catch (err) {
-    return typeof defaultValue === "function" ? defaultValue() : defaultValue;
-  }
+  return typeof defaultValue === "function" ? defaultValue() : defaultValue;
 }
 
 function storageSet(key, value) {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch (err) {
-    console.warn("localStorage write failed:", err);
-  }
+  return value;
 }
 
 function migrateData() {
-  var version = localStorage.getItem("schoolmap_data_version");
-  if (version !== APP_DATA_VERSION) {
-    localStorage.removeItem(APP_LOCATIONS_KEY);
-    localStorage.setItem("schoolmap_data_version", APP_DATA_VERSION);
-  }
+  return true;
 }
 
 function getStoredLocations() {
@@ -191,14 +139,14 @@ function storeUsers(users) {
 }
 
 function getCurrentUser() {
-  return storageGet(APP_CURRENT_KEY, null);
+  return AppState.currentUser || null;
 }
 
 function setCurrentUser(user) {
   if (user) {
-    storageSet(APP_CURRENT_KEY, user);
+    AppState.currentUser = user;
   } else {
-    localStorage.removeItem(APP_CURRENT_KEY);
+    AppState.currentUser = null;
   }
 }
 
@@ -219,6 +167,21 @@ function getColorMap() {
 
 function deepClone(obj) {
   return JSON.parse(JSON.stringify(obj));
+}
+
+function getApiBase() {
+  if (window.location.protocol === "file:") {
+    return APP_LOCALHOST_API_BASE;
+  }
+  return APP_API_BASE;
+}
+
+function apiUrl(action, id) {
+  var url = getApiBase() + "?action=" + encodeURIComponent(action || "");
+  if (id !== undefined && id !== null && id !== "") {
+    url += "&id=" + encodeURIComponent(id);
+  }
+  return url;
 }
 
 /* =========================================================
@@ -251,6 +214,7 @@ function confirmLogout() {
 }
 
 function performLogout() {
+  fetch(typeof apiUrl === "function" ? apiUrl("logout") : "../backend/api.php?action=logout", { credentials: "same-origin" }).catch(function () {});
   AppState.currentUser = null;
   setCurrentUser(null);
   showToast("You have been signed out.");
@@ -280,20 +244,40 @@ function requireSuperAdminPage() {
    ========================================================= */
 
 var toastTimer = null;
+var toastHideTimer = null;
 
 function showToast(message) {
   var toast = document.getElementById("toast");
   if (!toast) {
     return;
   }
-  toast.textContent = message;
-  toast.style.display = "";
 
   if (toastTimer) {
     clearTimeout(toastTimer);
   }
+  if (toastHideTimer) {
+    clearTimeout(toastHideTimer);
+  }
+
+  toast.classList.remove("show");
+  toast.style.display = "none";
+  void toast.offsetWidth;
+
+  toast.textContent = message;
+  toast.style.display = "";
+  requestAnimationFrame(function () {
+    toast.classList.add("show");
+  });
+
   toastTimer = setTimeout(function () {
-    toast.style.display = "none";
+    toast.classList.remove("show");
+    toastTimer = null;
+    toastHideTimer = setTimeout(function () {
+      if (!toast.classList.contains("show")) {
+        toast.style.display = "none";
+      }
+      toastHideTimer = null;
+    }, 250);
   }, 3000);
 }
 
@@ -327,7 +311,7 @@ function ensureAdminUser() {
 
 document.addEventListener("DOMContentLoaded", function () {
   ensureAdminUser();
-  AppState.currentUser = getCurrentUser();
+  AppState.currentUser = window.SchoolMapCurrentUser || getCurrentUser();
   AppState.locations = getStoredLocations();
   AppState.floors = getStoredFloors();
   AppState.legends = getStoredLegends();

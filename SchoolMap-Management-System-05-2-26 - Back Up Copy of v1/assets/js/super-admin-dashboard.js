@@ -5,9 +5,14 @@
 
 "use strict";
 
-document.addEventListener("DOMContentLoaded", function () {
+document.addEventListener("DOMContentLoaded", async function () {
   // 1. Security Check
-  if (!requireSuperAdminPage()) return;
+  var sessionResult = await apiRequest("me", "GET");
+  if (!sessionResult.ok || !sessionResult.payload || !sessionResult.payload.user || sessionResult.payload.user.role !== "super_admin") {
+    window.location.href = "login.html";
+    return;
+  }
+  AppState.currentUser = sessionResult.payload.user;
 
   var user = AppState.currentUser;
 
@@ -43,12 +48,12 @@ document.addEventListener("DOMContentLoaded", function () {
   }
 });
 
-var API_BASE = "../backend/api.php";
+var API_BASE = typeof getApiBase === "function" ? getApiBase() : "../backend/api.php";
 
 async function apiRequest(action, method, data, id) {
   try {
-    var url = API_BASE + "?action=" + encodeURIComponent(action);
-    if (id) {
+    var url = typeof apiUrl === "function" ? apiUrl(action, id) : API_BASE + "?action=" + encodeURIComponent(action);
+    if (id && typeof apiUrl !== "function") {
       url += "&id=" + encodeURIComponent(id);
     }
 
@@ -297,7 +302,11 @@ function toggleAdminStatus(id, currentlyDisabled) {
   );
   if (!confirmed) return;
 
-  fetch("../backend/api.php?action=admins&id=" + encodeURIComponent(id), {
+  var newRole = user.isDisabled ? (user._prevRole || "admin") : "viewer";
+  var API_BASE = typeof getApiBase === "function" ? getApiBase() : "../backend/api.php";
+
+  fetch(typeof apiUrl === "function" ? apiUrl("admins", id) : API_BASE + "?action=admins&id=" + encodeURIComponent(id), {
+>>>>>>> 1f2a698 (I modified admin-dashboard, some js, and php connection, also the styles, it is now appearing to the map.html)
     method: "PUT",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
@@ -335,8 +344,8 @@ function resetAdminPassword(id) {
     return;
   }
 
-  var API_BASE = "../backend/api.php";
-  fetch(API_BASE + "?action=admins&id=" + encodeURIComponent(id), {
+  var API_BASE = typeof getApiBase === "function" ? getApiBase() : "../backend/api.php";
+  fetch(typeof apiUrl === "function" ? apiUrl("admins", id) : API_BASE + "?action=admins&id=" + encodeURIComponent(id), {
     method: "PUT",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
@@ -457,21 +466,8 @@ function loadBackupHistory() {
 var currentLogFilter = "all";
 
 function addLog(category, action, details) {
-  // Save to localStorage
-  var logs = storageGet(APP_LOGS_KEY, []);
   var user = getCurrentUser();
-  logs.unshift({
-    timestamp: new Date().toISOString(),
-    user: user ? user.fullName : "System",
-    action: action,
-    category: category,
-    details: details || "",
-  });
-  if (logs.length > 500) logs = logs.slice(0, 500);
-  storageSet(APP_LOGS_KEY, logs);
-
-  // Also save to DB audit_log
-  fetch("../backend/api.php?action=audit_log", {
+  fetch(typeof apiUrl === "function" ? apiUrl("audit_log") : "../backend/api.php?action=audit_log", {
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
@@ -482,9 +478,21 @@ function addLog(category, action, details) {
   }).catch(function() {});
 }
 
-function loadLogs() {
+async function loadLogs() {
   var tbody = document.getElementById("logs-table-body");
   if (!tbody) return;
+  var result = await apiRequest("audit_log", "GET");
+  var logs = (result.ok && result.payload && Array.isArray(result.payload.audit_log))
+    ? result.payload.audit_log.map(function (log) {
+      return {
+        timestamp: log.timestamp,
+        user: log.admin_name || "System",
+        action: log.action || "",
+        category: String(log.action || "system").toLowerCase(),
+        details: log.description || "",
+      };
+    })
+    : [];
 
   tbody.innerHTML = "<tr><td colspan='5' style='padding:20px; text-align:center; opacity:0.5;'>Loading...</td></tr>";
 
@@ -793,22 +801,5 @@ function saveSettings() {
 }
 
 function resetSystem() {
-  if (!confirm("WARNING: This will wipe ALL data except the default Super Admin. Are you absolutely sure?")) return;
-  if (!confirm("FINAL WARNING: This action CANNOT be undone. Proceed?")) return;
-
-  var superAdmin = DEFAULT_USERS.find(function (u) {
-    return u.role === "super_admin";
-  });
-
-  storageSet(APP_USERS_KEY, [superAdmin]);
-  localStorage.removeItem(APP_LOCATIONS_KEY);
-  localStorage.removeItem(APP_FLOORS_KEY);
-  localStorage.removeItem(APP_LEGENDS_KEY);
-  localStorage.removeItem(APP_LOGS_KEY);
-  localStorage.removeItem(APP_FLOOR_IMAGES_KEY);
-  localStorage.removeItem("schoolmap_archives");
-  localStorage.removeItem("schoolmap_backup_history");
-
-  alert("System Reset Complete. You will be redirected to login.");
-  window.location.href = "login.html";
+  alert("System reset is disabled now that data is stored in school_map_db2. Use database backups or admin delete tools instead.");
 }

@@ -1,7 +1,9 @@
 /* SchoolMap Admin Panel — admin-dashboard.js
    Legend-based pin system + cursor-centered scroll zoom
+
    Data persisted via backend API */
 (async () => {
+
   // ---------- Constants ----------
   const API_BASE = "../backend/api.php";
 
@@ -84,6 +86,43 @@
     Star: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>',
     Home: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>',
   };
+  Object.assign(ICONS, {
+    Building2:       '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18"/><path d="M6 12H4a2 2 0 0 0-2 2v8"/><path d="M18 9h2a2 2 0 0 1 2 2v11"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg>',
+    School:          '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 22h20"/><path d="M6 18V9l6-4 6 4v9"/><path d="M10 22v-6h4v6"/><path d="M8 12h.01"/><path d="M16 12h.01"/></svg>',
+    GraduationCap:   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10 12 5 2 10l10 5 10-5Z"/><path d="M6 12v5c3 2 9 2 12 0v-5"/><path d="M22 10v6"/></svg>',
+    FlaskConical:    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2v7.3L4.4 19a2 2 0 0 0 1.7 3h11.8a2 2 0 0 0 1.7-3L14 9.3V2"/><path d="M8.5 2h7"/><path d="M7 16h10"/></svg>',
+    Monitor:         '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>',
+    Printer:         '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/><path d="M18 12h.01"/></svg>',
+    Wifi:            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13a10 10 0 0 1 14 0"/><path d="M8.5 16.5a5 5 0 0 1 7 0"/><path d="M2 9a15 15 0 0 1 20 0"/><path d="M12 20h.01"/></svg>',
+    Phone:           '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 2 .7 2.8a2 2 0 0 1-.4 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2Z"/></svg>',
+    Info:            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>',
+    HelpCircle:      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 1 1 5.8 1c-.6 1.1-2 1.4-2.6 2.4-.2.3-.3.7-.3 1.1"/><path d="M12 17h.01"/></svg>',
+    Shield:          '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V5l8-3 8 3v8Z"/></svg>',
+    HeartPulse:      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19.5 13.6 12 21l-7.5-7.4A5 5 0 0 1 12 7a5 5 0 0 1 7.5 6.6Z"/><path d="M3 12h4l2-3 3 6 2-3h7"/></svg>',
+    Cross:           '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2h2v7h7v2h-7v11h-2V11H4V9h7z"/></svg>',
+    Accessibility:   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="4" r="2"/><path d="M4 10h16"/><path d="M12 6v8"/><path d="m8 22 4-8 4 8"/></svg>',
+    ParkingCircle:   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M10 16V8h3a2.5 2.5 0 0 1 0 5h-3"/></svg>',
+    Bus:             '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 17h12l1-5V5a3 3 0 0 0-3-3H8a3 3 0 0 0-3 3v7l1 5Z"/><path d="M8 22h.01"/><path d="M16 22h.01"/><path d="M5 9h14"/><path d="M8 13h.01"/><path d="M16 13h.01"/></svg>',
+    Coffee:          '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h14v6a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4Z"/><path d="M18 9h1a3 3 0 0 1 0 6h-1"/><path d="M6 2v2"/><path d="M10 2v2"/><path d="M14 2v2"/></svg>',
+    Wrench:          '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5 5L3 18v3h3l6.7-6.7a4 4 0 0 0 5-5l-2.4 2.4-2-2 2.4-2.4Z"/></svg>',
+    Settings:        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V22a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1A2 2 0 1 1 4.2 18l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1A2 2 0 1 1 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3h.1A1.7 1.7 0 0 0 10 3V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1A2 2 0 1 1 19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9v.1A1.7 1.7 0 0 0 21 10h.1a2 2 0 1 1 0 4H21a1.7 1.7 0 0 0-1.6 1Z"/></svg>',
+    Archive:         '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>',
+    Landmark:        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 22h18"/><path d="M6 18V9"/><path d="M10 18V9"/><path d="M14 18V9"/><path d="M18 18V9"/><path d="m12 2 9 5H3Z"/></svg>',
+    Navigation:      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>',
+    Compass:         '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="16.2 7.8 14 14 7.8 16.2 10 10 16.2 7.8"/></svg>',
+    Clock:           '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>',
+    Calendar:        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>',
+    Users:           '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9"/><path d="M16 3.1a4 4 0 0 1 0 7.8"/></svg>',
+    ClipboardList:   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M8 12h8"/><path d="M8 16h8"/><path d="M8 8h.01"/></svg>',
+    FileCheck:       '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="m9 15 2 2 4-4"/></svg>',
+    Package:         '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m21 8-9-5-9 5 9 5 9-5Z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>',
+    KeyRound:        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m12 12 9-9"/><path d="m16 7 2 2"/><path d="m19 4 2 2"/></svg>',
+    Lock:            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>',
+    Bell:            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>',
+    Megaphone:       '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 18-5v12L3 13Z"/><path d="M11.6 16.8a3 3 0 0 1-5.8-1.6"/></svg>',
+    Camera:          '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4 16 7h4a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h4l1.5-3Z"/><circle cx="12" cy="13" r="3"/></svg>',
+    Image:           '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></svg>',
+  });
   const ICON_NAMES = Object.keys(ICONS);
 
   const ICONS_SM = {
@@ -114,6 +153,7 @@
   const DEFAULTS = {
     floors: [{ id: 1, name: "Ground Floor", label: "1F" }],
     // Legends replace "types" — each legend is a named category with color + icon
+
     legends: [
       {
         id: "lg-classroom",
@@ -161,10 +201,14 @@
         icon: "AlertTriangle",
       },
     ],
+
+    legends: [],
+
     locations: [],
   };
 
   // ---------- State ----------
+
   const load = (k, fb) => {
     try {
       const v = localStorage.getItem(k);
@@ -175,8 +219,13 @@
   };
   const save = (k, v) => localStorage.setItem(k, JSON.stringify(v));
 
+  const load = (_k, fb) => JSON.parse(JSON.stringify(fb));
+  const save = () => {};
+
+
   function normalizeRoute(route) {
     return {
+
       ...route,
       archived: !!route.archived,
       name: route.name || '',
@@ -202,6 +251,23 @@
             pointOrder: p.pointOrder ?? p.point_order ?? p.order ?? null,
           }))
         : [],
+
+        id: String(route.id),
+        name: route.name || '',
+        originId: String(route.originId || route.from_pin_id || ""),
+        destinationId: String(route.destinationId || route.to_pin_id || ""),
+        origin: route.origin || '',
+        destination: route.destination || '',
+        direction: route.direction || '',
+        floor: parseInt(route.floor || route.map_id || 1),
+        archived: !!route.archived,
+        points: Array.isArray(route.points) ? route.points.map((p, i) => ({
+            x: parseFloat(p.x || 50),
+            y: parseFloat(p.y || 50),
+            floor: parseInt(p.floor || route.floor || 1),
+            pointOrder: p.point_order || p.pointOrder || i + 1
+        })) : []
+
     };
   }
 
@@ -224,7 +290,12 @@
     showGrid: false,
     showLegend: false,
     showFloorPreview: false,
+
     edit: null, // { kind: "floor"|"pin"|"legend", isNew, draft }
+
+    hasPendingAdminChanges: false,
+    edit:          null, // { kind: "floor"|"pin"|"legend", isNew, draft }
+
     routeEditor: {
       draft: null,
       selectedPointIndex: null,
@@ -289,7 +360,10 @@
   }
 
   /** Find legend by id */
+
   const legendById = (id) => state.legends.find((l) => l.id === id);
+
+  const legendById   = (id) => state.legends.find(l => String(l.id) === String(id));
   /** Colour for a pin — falls back gracefully */
   const colorForPin = (loc) => legendById(loc.legendId)?.color || "#ff4d4d";
   /** SVG icon string for a pin */
@@ -298,6 +372,7 @@
     return ICONS[lg?.icon || "MapPin"] || ICONS.MapPin;
   };
   /** Label of the legend a pin belongs to */
+
   const labelForPin = (loc) => legendById(loc.legendId)?.label || "Unknown";
   const activeLegend = () =>
     legendById(state.activeLegendId) || state.legends[0] || null;
@@ -306,8 +381,167 @@
       ? state.images[id] || (id === 1 ? "../images/map-ground-floor.png" : "")
       : "";
 
+  const labelForPin  = (loc) => legendById(loc.legendId)?.label || "Unknown";
+  const activeLegend  = () => legendById(state.activeLegendId) || state.legends[0] || null;
+  const floorImageSrc   = (id) => id != null ? (state.images[id] || (id === 1 ? "../images/map-ground-floor.png" : "")) : "";
+  const API_BASE = typeof getApiBase === "function" ? getApiBase() : "../backend/api.php";
+
+  async function apiRequest(action, method = "GET", data = null, id = null) {
+    try {
+      const url = typeof apiUrl === "function"
+        ? apiUrl(action, id)
+        : API_BASE + "?action=" + encodeURIComponent(action) + (id ? "&id=" + encodeURIComponent(id) : "");
+      const init = {
+        method,
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: { 'Content-Type': 'application/json' }
+      };
+      if (data != null && method !== 'GET') {
+        init.body = JSON.stringify(data);
+      }
+      const response = await fetch(url, init);
+      const text = await response.text();
+      const trimmed = text.trim();
+      if (trimmed.startsWith('<?php') || trimmed.startsWith('<')) {
+        throw new Error(`API request returned non-JSON content from ${url}. Make sure the admin panel is served through PHP/XAMPP (http://localhost/...) rather than opened directly from the file system.`);
+      }
+      let payload;
+      try {
+        payload = JSON.parse(text);
+      } catch (parseError) {
+        throw new Error(`Unable to parse JSON response from ${url}: ${trimmed.slice(0, 120)}`);
+      }
+      if (!response.ok) {
+        console.warn('API request failed', action, response.status, payload);
+      }
+      return payload;
+    } catch (err) {
+      console.warn('API request failed', action, err);
+      return null;
+    }
+  }
+>>>>>>> 1f2a698 (I modified admin-dashboard, some js, and php connection, also the styles, it is now appearing to the map.html)
+
   function saveRoutesLocally() {
     save(KEYS.routes, state.routes);
+  }
+
+  function normalizeImagePath(path) {
+    if (!path) return "";
+    const value = String(path).trim();
+    if (/^(data:|https?:\/\/|\/\/)/i.test(value)) {
+      return value;
+    }
+    const normalized = value.replace(/^[.\/]+/, "");
+    if (/^images\//i.test(normalized)) {
+      return "../" + normalized;
+    }
+    if (/^maps\/ground\.png$/i.test(normalized)) {
+      return "../images/map-ground-floor.png";
+    }
+    if (/^maps\//i.test(normalized)) {
+      return normalized;
+    }
+    return value;
+  }
+
+  function normalizeFloor(floor, index = 0) {
+    let imagePath = normalizeImagePath(floor.image_path || floor.image || "");
+    return {
+      id: Number(floor.id ?? floor.map_id),
+      name: floor.name || floor.floor_name || "Untitled Floor",
+      label: floor.label || `${index + 1}F`,
+      image_path: imagePath,
+    };
+  }
+
+  function normalizeLegend(legend) {
+    const name = legend.label || legend.name || "Untitled";
+    return {
+      id: Number(legend.id ?? legend.category_id),
+      label: name,
+      name,
+      type: legend.type || String(name).toLowerCase().replace(/[\s/]+/g, "_"),
+      color: legend.color || "#ff4d4d",
+      icon: legend.icon || "MapPin",
+    };
+  }
+
+  function normalizePin(pin) {
+    const categoryId = pin.legendId ?? pin.category_id ?? pin.categoryId ?? "";
+    return {
+      id: String(pin.id ?? pin.pin_id),
+      name: pin.name || "Untitled",
+      description: pin.description || "",
+      legendId: categoryId === null ? "" : String(categoryId),
+      category_id: categoryId === "" || categoryId === null ? null : Number(categoryId),
+      floor: Number(pin.floor ?? pin.map_id ?? 1),
+      map_id: Number(pin.map_id ?? pin.floor ?? 1),
+      x: Number(pin.x ?? 50),
+      y: Number(pin.y ?? 50),
+      image: normalizeImagePath(pin.image || ""),
+    };
+  }
+
+  function floorPayload(floor) {
+    return {
+      name: floor.name,
+      image_path: floor.image || floor.image_path || floorImageSrc(floor.id) || "maps/default.png",
+    };
+  }
+
+  function pinPayload(pin) {
+    return {
+      map_id: Number(pin.floor ?? pin.map_id ?? state.activeFloor ?? 1),
+      name: pin.name,
+      description: pin.description || "",
+      category_id: pin.legendId ? Number(pin.legendId) : null,
+      image: pin.image || "",
+      x: clamp(Number(pin.x ?? 50), 0, 100),
+      y: clamp(Number(pin.y ?? 50), 0, 100),
+    };
+  }
+
+  function legendPayload(legend) {
+    return {
+      name: legend.label || legend.name || "Untitled",
+      color: legend.color || "#ff4d4d",
+      icon: legend.icon || "MapPin",
+    };
+  }
+
+  async function fetchFloors() {
+    const res = await apiRequest("floors");
+    const floors = res?.floors || res?.data?.floors || [];
+    if (!Array.isArray(floors)) return;
+    state.floors = floors.map(normalizeFloor);
+    state.images = {};
+    state.floors.forEach(floor => {
+      if (floor.image_path) state.images[floor.id] = floor.image_path;
+    });
+    if (!state.floors.length) state.floors = JSON.parse(JSON.stringify(DEFAULTS.floors));
+    if (!state.floors.some(f => String(f.id) === String(state.activeFloor))) {
+      state.activeFloor = state.floors[0]?.id ?? null;
+    }
+  }
+
+  async function fetchLegends() {
+    const res = await apiRequest("legends");
+    const legends = res?.legends || res?.data?.legends || [];
+    if (!Array.isArray(legends)) return;
+    state.legends = legends.map(normalizeLegend);
+    if (!state.legends.length) state.legends = JSON.parse(JSON.stringify(DEFAULTS.legends));
+    if (!state.legends.some(lg => String(lg.id) === String(state.activeLegendId))) {
+      state.activeLegendId = state.legends[0]?.id || null;
+    }
+  }
+
+  async function fetchPins() {
+    const res = await apiRequest("pins");
+    const pins = res?.pins || res?.data?.pins || [];
+    if (!Array.isArray(pins)) return;
+    state.locations = pins.map(normalizePin);
   }
 
   async function fetchRoutes() {
@@ -378,6 +612,10 @@
 
   const routeById = (id) => state.routes.find((r) => r.id == id);
   const destinationLocation = (id) => state.locations.find((l) => l.id == id);
+
+  const routeById = (id) => state.routes.find(r => String(r.id) === String(id));
+  const destinationLocation = (id) => state.locations.find(l => String(l.id) === String(id));
+
   const distanceBetween = (x1, y1, x2, y2) => Math.hypot(x1 - x2, y1 - y2);
   const nearestPin = (x, y, floor, threshold = 6) => {
     let nearest = null;
@@ -453,8 +691,132 @@
   };
 
   const icon = (name) => ICONS_SM[name] || ICONS_SM.search || "";
+  let adminBackGuardReady = false;
+
+  function markAdminChangesPending() {
+    state.hasPendingAdminChanges = true;
+  }
+
+  function clearAdminChangesPending() {
+    state.hasPendingAdminChanges = false;
+  }
+
+  function hasOpenUnsavedEditor() {
+    return !!state.edit || !!state.routeEditor.draft;
+  }
+
+  function hasPendingBackWarning() {
+    return state.hasPendingAdminChanges || hasOpenUnsavedEditor();
+  }
+
+  async function saveAllAdminChanges() {
+    if (state.edit) {
+      await saveEdit();
+    } else if (state.routeEditor.draft) {
+      await saveRoute();
+    }
+
+    if (hasOpenUnsavedEditor()) {
+      showToast("Finish the open editor before leaving.");
+      return false;
+    }
+
+    clearAdminChangesPending();
+    showToast("All admin changes saved.");
+    return true;
+  }
+
+  function showAdminBackConfirm(source = "button") {
+    const panel = $("#adminBackConfirm");
+    if (!panel) {
+      window.location.href = "map.html";
+      return;
+    }
+    const title = panel.querySelector("h2");
+    const message = panel.querySelector("p");
+    const saveBtn = $("#adminBackSave");
+    const actions = panel.querySelector(".admin-back-actions");
+    const hasPending = hasPendingBackWarning();
+
+    if (saveBtn) saveBtn.hidden = !hasPending;
+    if (actions) actions.classList.toggle("has-save", hasPending);
+
+    if (hasPending) {
+      if (title) title.textContent = "Unsaved admin changes";
+      if (message) message.textContent = "You have changes that are not confirmed with Save All. Do you want to save all before going back to the map?";
+    } else {
+      if (title) title.textContent = "Return to map?";
+      if (message) message.textContent = "Are you sure you want to go back to the map?";
+    }
+    panel.dataset.source = source;
+    panel.hidden = false;
+  }
+
+  function hideAdminBackConfirm() {
+    const panel = $("#adminBackConfirm");
+    if (panel) {
+      panel.hidden = true;
+      panel.dataset.source = "";
+    }
+  }
+
+  function confirmAdminBackToMap() {
+    try {
+      sessionStorage.setItem("show_map_entry_banner", "true");
+    } catch (err) {
+      console.warn("Could not request map entry banner", err);
+    }
+    window.location.href = "map.html";
+  }
+
+  async function saveThenConfirmAdminBackToMap() {
+    const saved = await saveAllAdminChanges();
+    if (saved) {
+      confirmAdminBackToMap();
+    }
+  }
+
+  function setupAdminBackGuard() {
+    if (adminBackGuardReady) return;
+    adminBackGuardReady = true;
+
+    try {
+      history.pushState({ schoolMapAdminBackGuard: true }, "", window.location.href);
+    } catch (err) {
+      console.warn("Admin back guard could not initialize", err);
+    }
+
+    window.addEventListener("popstate", () => {
+      showAdminBackConfirm("browser");
+      try {
+        history.pushState({ schoolMapAdminBackGuard: true }, "", window.location.href);
+      } catch (err) {
+        console.warn("Admin back guard could not restore state", err);
+      }
+    });
+
+    bind("#adminBackCancel", "click", hideAdminBackConfirm);
+    bind("#adminBackSave", "click", saveThenConfirmAdminBackToMap);
+    bind("#adminBackProceed", "click", confirmAdminBackToMap);
+
+    const panel = $("#adminBackConfirm");
+    if (panel) {
+      panel.addEventListener("click", (event) => {
+        if (event.target === panel) {
+          hideAdminBackConfirm();
+        }
+      });
+    }
+
+    window.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        hideAdminBackConfirm();
+      }
+    });
+  }
 
   function wireTopBarButtons() {
+
     bind("#saveBtn", "click", () => {
       save(KEYS.floors, state.floors);
       save(KEYS.locations, state.locations);
@@ -463,6 +825,11 @@
       saveRoutesLocally();
       showToast("All changes saved");
     });
+
+    setupAdminBackGuard();
+
+    bind("#saveBtn", "click", saveAllAdminChanges);
+
 
     bind("#resetBtn", "click", () => {
       if (!confirm("Reset all data to defaults?")) return;
@@ -475,13 +842,18 @@
       state.edit = null;
       state.selectedPinId = null;
       renderAll();
-      showToast("Reset to defaults");
+      markAdminChangesPending();
+      showToast("Reset only changed this screen. Save items to write them to the database.");
     });
 
     bind("#backBtn", "click", () => {
+
       history.length > 1
         ? history.back()
         : alert("This is the standalone admin panel.");
+
+      showAdminBackConfirm("button");
+
     });
   }
 
@@ -628,6 +1000,7 @@
     if (state.edit && state.edit.kind === "pin" && !state.edit.isNew) {
       state.edit.draft.x = x;
       state.edit.draft.y = y;
+
       const p = state.locations.find((l) => l.id === state.edit.draft.id);
       if (p) {
         p.x = x;
@@ -635,6 +1008,11 @@
       }
       renderControlPanel();
       renderMap();
+
+      const p = state.locations.find(l => String(l.id) === String(state.edit.draft.id));
+      if (p) { p.x = x; p.y = y; }
+      renderControlPanel(); renderMap();
+
       return;
     }
 
@@ -859,6 +1237,7 @@
   function renderLegendsList() {
     const q = state.legendSearch.trim().toLowerCase();
     const filteredLegends = q
+
       ? state.legends.filter(
           (lg) =>
             lg.label.toLowerCase().includes(q) ||
@@ -866,6 +1245,11 @@
               (loc) =>
                 loc.legendId === lg.id && loc.name.toLowerCase().includes(q),
             ),
+
+      ? state.legends.filter(lg =>
+          lg.label.toLowerCase().includes(q) ||
+          state.locations.some(loc => String(loc.legendId) === String(lg.id) && loc.name.toLowerCase().includes(q))
+
         )
       : state.legends;
 
@@ -877,7 +1261,11 @@
         <span class="row-swatch" style="background:#fff;color:#2d2d2d">${ICONS[lg.icon] || ICONS.MapPin}</span>
         <div class="row-info">
           <div class="row-name">${escapeHtml(lg.label)}</div>
+
           <div class="row-sub">${state.locations.filter((l) => l.legendId === lg.id).length} pin(s)</div>
+
+          <div class="row-sub">${state.locations.filter(l => String(l.legendId) === String(lg.id)).length} pin(s)</div>
+
         </div>
         <button class="icon-btn" data-edit-legend="${lg.id}">${ICONS_SM.pencil}</button>
         <button class="icon-btn danger" data-delete-legend="${lg.id}">${ICONS_SM.trash}</button>
@@ -918,6 +1306,7 @@
       ? locations.filter((loc) => loc.name.toLowerCase().includes(qLocation))
       : locations;
 
+
     const pinRows = filteredLocations
       .map((loc) => {
         const activeCount = state.routes.filter(
@@ -929,6 +1318,13 @@
         const selectedClass =
           state.routeEditor.originFilter == loc.id ? "selected" : "";
         return `
+
+    const pinRows = filteredLocations.map(loc => {
+      const activeCount = state.routes.filter(r => String(r.originId) === String(loc.id) && !r.archived).length;
+      const archivedCount = state.routes.filter(r => String(r.originId) === String(loc.id) && r.archived).length;
+      const selectedClass = String(state.routeEditor.originFilter) === String(loc.id) ? 'selected' : '';
+      return `
+
         <div class="row route-location-row ${selectedClass}" data-route-origin="${loc.id}">
           <div>
             <span class="row-name">${escapeHtml(loc.name)}</span>
@@ -1018,6 +1414,11 @@
           `<option value="${loc.id}" ${loc.id === routeDraft.originId || loc.id === routeDraft.destinationId ? "selected" : ""}>${escapeHtml(loc.name)} (F${loc.floor})</option>`,
       )
       .join("");
+
+    const pinOptions = state.locations.map(loc =>
+      `<option value="${loc.id}" ${String(loc.id) === String(routeDraft.originId) || String(loc.id) === String(routeDraft.destinationId) ? 'selected' : ''}>${escapeHtml(loc.name)} (F${loc.floor})</option>`
+    ).join('');
+
 
     const originLocation = destinationLocation(routeDraft.originId);
     const destinationLocationLabel = destinationLocation(
@@ -1177,12 +1578,18 @@
       `;
     } else if (e.kind === "pin") {
       // Build legend options
+
       const legendOptions = state.legends
         .map(
           (lg) =>
             `<option value="${lg.id}" ${lg.id === e.draft.legendId ? "selected" : ""}>${escapeHtml(lg.label)}</option>`,
         )
         .join("");
+
+      const legendOptions = state.legends.map(lg =>
+        `<option value="${lg.id}" ${String(lg.id) === String(e.draft.legendId) ? "selected" : ""}>${escapeHtml(lg.label)}</option>`
+      ).join("");
+
 
       // Floor options
       const floorOptions = state.floors
@@ -1224,7 +1631,7 @@
       `;
     } else if (e.kind === "legend") {
       body = `
-        <div class="field"><label>Legend Name</label><input type="text" id="lLabel" value="${escapeHtml(e.draft.label)}" placeholder="Classrooms"/></div>
+        <div class="field"><label>Legend Name</label><input type="text" id="lLabel" value="${escapeHtml(e.draft.label)}" placeholder="Legend name"/></div>
         <div class="field"><label>Color</label><input type="color" id="lColor" value="${e.draft.color}"/></div>
         <div class="field">
           <label>Icon — choose from library</label>
@@ -1291,7 +1698,11 @@
     // Pins
     body.querySelectorAll("[data-pin-id]").forEach((el) => {
       el.addEventListener("click", () => {
+
         const p = state.locations.find((l) => l.id == el.dataset.pinId);
+
+        const p = state.locations.find(l => String(l.id) === String(el.dataset.pinId));
+
         if (!p) return;
         state.selectedPinId = p.id;
         state.mode = "default";
@@ -1302,7 +1713,11 @@
     body.querySelectorAll("[data-edit-pin]").forEach((el) => {
       el.addEventListener("click", (e) => {
         e.stopPropagation();
+
         const p = state.locations.find((l) => l.id == el.dataset.editPin);
+
+        const p = state.locations.find(l => String(l.id) === String(el.dataset.editPin));
+
         if (!p) return;
         state.mode = "default";
         state.edit = { kind: "pin", isNew: false, draft: { ...p } };
@@ -1320,7 +1735,11 @@
     // Legends — click row to edit, edit / delete buttons
     body.querySelectorAll("[data-legend-id]").forEach((el) => {
       el.addEventListener("click", () => {
+
         const lg = state.legends.find((x) => x.id === el.dataset.legendId);
+
+        const lg = state.legends.find(x => String(x.id) === String(el.dataset.legendId));
+
         if (!lg) return;
         state.mode = "default";
         state.activeLegendId = lg.id;
@@ -1330,7 +1749,11 @@
     body.querySelectorAll("[data-edit-legend]").forEach((el) => {
       el.addEventListener("click", (e) => {
         e.stopPropagation();
+<
         const lg = state.legends.find((x) => x.id === el.dataset.editLegend);
+
+        const lg = state.legends.find(x => String(x.id) === String(el.dataset.editLegend));
+
         if (!lg) return;
         state.mode = "default";
         state.edit = {
@@ -1881,6 +2304,7 @@
   }
 
   // ---------- SAVE EDIT ----------
+
   async function syncFloorToBackend(floor, isNew) {
     const payload = { name: floor.name, label: floor.label };
     const res = await apiRequest(
@@ -1984,6 +2408,7 @@
     }
   }
 
+
   async function saveEdit() {
     const e = state.edit;
     if (!e) return;
@@ -1995,9 +2420,16 @@
         name: (d.name || "").trim() || "Untitled",
         label: (d.label || "").trim() || "F" + d.id,
       };
+      const method = e.isNew ? "POST" : "PUT";
+      const res = await apiRequest("floors", method, floorPayload({ ...draft, image: d.image }), e.isNew ? null : draft.id);
+      if (!res || res.error) { showToast(res?.message || "Could not save floor"); return; }
+      if (e.isNew && res.data?.id) draft.id = Number(res.data.id);
       if (e.isNew) state.floors.push(draft);
+
       else
         state.floors = state.floors.map((f) => (f.id === draft.id ? draft : f));
+
+      else         state.floors = state.floors.map(f => String(f.id) === String(draft.id) ? draft : f);
 
       if (d.image) state.images[d.id] = d.image;
       else if (d.id === 1)
@@ -2005,7 +2437,11 @@
       else delete state.images[d.id];
 
       if (state.activeFloor == null) state.activeFloor = draft.id;
+
       await syncFloorToBackend(draft, e.isNew);
+
+      markAdminChangesPending();
+
       showToast(e.isNew ? "Floor added" : "Floor updated");
     } else if (e.kind === "pin") {
       const d = e.draft;
@@ -2015,6 +2451,7 @@
         x: clamp(d.x, 0, 100),
         y: clamp(d.y, 0, 100),
       };
+
       const exists = state.locations.find((p) => p.id === draft.id);
       if (e.isNew && !exists) state.locations.push(draft);
       else
@@ -2023,6 +2460,19 @@
         );
       state.selectedPinId = draft.id;
       await syncPinToBackend(draft, e.isNew);
+
+      const oldId = draft.id;
+      const exists = state.locations.find(p => String(p.id) === String(oldId));
+      const method = e.isNew || !exists ? "POST" : "PUT";
+      const res = await apiRequest("pins", method, pinPayload(draft), method === "POST" ? null : draft.id);
+      if (!res || res.error) { showToast(res?.message || "Could not save pin"); return; }
+      if (method === "POST" && res.data?.id) draft.id = String(res.data.id);
+      if (res.data?.image) draft.image = res.data.image;
+      if (method === "POST" && !exists) state.locations.push(draft);
+      else                              state.locations = state.locations.map(p => String(p.id) === String(oldId) ? draft : p);
+      state.selectedPinId = draft.id;
+      markAdminChangesPending();
+
       showToast(e.isNew ? "Pin added" : "Pin updated");
     } else if (e.kind === "legend") {
       const d = e.draft;
@@ -2032,6 +2482,7 @@
         color: d.color,
         icon: (d.icon || "").trim() || "MapPin",
       };
+
       const exists = state.legends.find((l) => l.id === draft.id);
       if (e.isNew && !exists) state.legends.push(draft);
       else
@@ -2039,6 +2490,16 @@
           l.id === draft.id ? draft : l,
         );
       await syncLegendToBackend(draft, e.isNew);
+
+      const exists = state.legends.find(l => String(l.id) === String(draft.id));
+      const method = e.isNew || !exists ? "POST" : "PUT";
+      const res = await apiRequest("legends", method, legendPayload(draft), method === "POST" ? null : draft.id);
+      if (!res || res.error) { showToast(res?.message || "Could not save legend"); return; }
+      if (method === "POST" && res.data?.id) draft.id = Number(res.data.id);
+      if (method === "POST" && !exists) state.legends.push(draft);
+      else                              state.legends = state.legends.map(l => String(l.id) === String(draft.id) ? draft : l);
+      markAdminChangesPending();
+
       showToast(e.isNew ? "Legend added" : "Legend updated");
     }
 
@@ -2081,6 +2542,7 @@
     if (res.payload && res.payload.success && routeData) {
       const updated = normalizeRoute(routeData);
       if (isNew) {
+
         state.routes = state.routes.map((r) =>
           r.id === route.id ? updated : r,
         );
@@ -2088,6 +2550,11 @@
         state.routes = state.routes.map((r) =>
           r.id === updated.id ? updated : r,
         );
+
+        state.routes = state.routes.map(r => String(r.id) === String(route.id) ? updated : r);
+      } else {
+        state.routes = state.routes.map(r => String(r.id) === String(updated.id) ? updated : r);
+
       }
       saveRoutesLocally();
       renderAll();
@@ -2122,9 +2589,13 @@
 
     const existing = routeById(route.id);
     if (existing) {
+
       state.routes = state.routes.map((r) =>
         r.id === route.id ? { ...route } : r,
       );
+
+      state.routes = state.routes.map(r => String(r.id) === String(route.id) ? { ...route } : r);
+
     } else {
       state.routes.push({ ...route });
     }
@@ -2134,8 +2605,12 @@
     state.routeEditor.draft = null;
     state.routeEditor.selectedPointIndex = null;
     state.routeEditor.originLocked = false;
+
     // Go back to routes list after saving
     state.activeSection = "routes";
+
+    markAdminChangesPending();
+
     renderAll();
     showToast(existing ? "Route updated" : "Route saved");
   }
@@ -2144,48 +2619,73 @@
     const route = routeById(routeId);
     if (!route) return;
     route.archived = !route.archived;
+
     state.routes = state.routes.map((r) =>
       r.id === route.id ? { ...route } : r,
     );
+    state.routes = state.routes.map(r => String(r.id) === String(route.id) ? { ...route } : r);
+
     saveRoutesLocally();
     syncRouteToBackend(route, false);
+    markAdminChangesPending();
     renderAll();
     showToast(route.archived ? "Route archived" : "Route restored");
   }
 
   function archiveOriginRoutes(originId) {
+
     const routes = state.routes.filter(
       (r) => r.originId === originId && !r.archived,
     );
+
+    const routes = state.routes.filter(r => String(r.originId) === String(originId) && !r.archived);
     if (!routes.length) {
       showToast("No active routes found for this location");
       return;
     }
+
     routes.forEach((r) => {
       r.archived = true;
     });
     state.routes = state.routes.map((r) =>
       routes.some((a) => a.id === r.id) ? { ...r, archived: true } : r,
     );
+
+    routes.forEach(r => { r.archived = true; });
+    state.routes = state.routes.map(r => routes.some(a => String(a.id) === String(r.id)) ? { ...r, archived: true } : r);
+
     saveRoutesLocally();
+    markAdminChangesPending();
     renderAll();
     showToast("Routes archived for this location");
   }
 
   function deleteRoute(id) {
+
     if (!confirm("Delete this route?")) return;
     state.routes = state.routes.filter((r) => r.id !== id);
     if (state.routeEditor.draft?.id === id) {
+
+    if (!confirm('Delete this route?')) return;
+    state.routes = state.routes.filter(r => String(r.id) !== String(id));
+    if (String(state.routeEditor.draft?.id) === String(id)) {
+
       state.routeEditor.draft = null;
       state.routeEditor.selectedPointIndex = null;
     }
     saveRoutesLocally();
+
     apiRequest("routes", "DELETE", null, id);
+
+    apiRequest('routes', 'DELETE', null, id);
+    markAdminChangesPending();
+
     renderAll();
     showToast("Route deleted");
   }
 
   // ---------- DELETE ----------
+
   function deleteFloor(id) {
     if (state.floors.length <= 1) {
       showToast("Keep at least one floor");
@@ -2194,14 +2694,28 @@
     if (!confirm("Delete this floor and its pins?")) return;
     state.floors = state.floors.filter((f) => f.id !== id);
     state.locations = state.locations.filter((l) => l.floor !== id);
+
+  async function deleteFloor(id) {
+    if (state.floors.length <= 1) { showToast("Keep at least one floor"); return; }
+    if (!confirm("Delete this floor and its pins?")) return;
+    const res = await apiRequest("floors", "DELETE", null, id);
+    if (!res || res.error) { showToast(res?.message || "Could not delete floor"); return; }
+    state.floors    = state.floors.filter(f => f.id !== id);
+    state.locations = state.locations.filter(l => l.floor !== id);
+
     delete state.images[id];
     if (state.activeFloor === id)
       state.activeFloor = state.floors[0]?.id ?? null;
     state.edit = null;
+
     apiRequest("floors", "DELETE", null, id);
+
+    markAdminChangesPending();
+
     renderAll();
     showToast("Floor deleted");
   }
+
 
   function deletePin(id) {
     if (!confirm("Delete this pin?")) return;
@@ -2209,9 +2723,69 @@
     if (state.selectedPinId == id) state.selectedPinId = null;
     state.edit = null;
     apiRequest("pins", "DELETE", null, id);
+
+  async function deletePin(id) {
+    const pin = state.locations.find(l => String(l.id) === String(id));
+    const pinName = pin?.name || `Pin #${id}`;
+    const linkedRoutes = state.routes.filter(r =>
+      String(r.originId) === String(id) || String(r.destinationId) === String(id)
+    ).length;
+    const confirmMessage = linkedRoutes > 0
+      ? `Delete "${pinName}" permanently from the database?\n\nThis will also delete ${linkedRoutes} linked route(s). This cannot be undone.`
+      : `Delete "${pinName}" permanently from the database?\n\nThis cannot be undone.`;
+
+    if (!confirm(confirmMessage)) {
+      showToast("Pin deletion cancelled");
+      return;
+    }
+
+    if (String(id).startsWith("loc-")) {
+      state.locations = state.locations.filter(l => String(l.id) !== String(id));
+      if (String(state.selectedPinId) === String(id)) state.selectedPinId = null;
+      state.edit = null;
+      markAdminChangesPending();
+      renderAll();
+      showToast("Unsaved pin removed");
+      return;
+    }
+
+    showToast("Deleting pin...");
+    const res = await apiRequest("pins", "DELETE", null, id);
+    if (!res || res.error) {
+      const message = res?.message || "Could not delete pin";
+      showToast(message);
+      alert(message);
+      return;
+    }
+
+    state.locations = state.locations.filter(l => String(l.id) !== String(id));
+    state.routes = state.routes.filter(r =>
+      String(r.originId) !== String(id) && String(r.destinationId) !== String(id)
+    );
+    if (String(state.selectedPinId) === String(id)) state.selectedPinId = null;
+    if (String(state.routeEditor.draft?.originId) === String(id) || String(state.routeEditor.draft?.destinationId) === String(id)) {
+      state.routeEditor.draft = null;
+      state.routeEditor.selectedPointIndex = null;
+    }
+    state.edit = null;
+    await Promise.allSettled([fetchPins(), fetchRoutes()]);
+
+    const stillExists = state.locations.some(l => String(l.id) === String(id));
+    if (stillExists) {
+      const message = `"${pinName}" was not removed from the database. Please try again.`;
+      renderAll();
+      showToast(message);
+      alert(message);
+      return;
+    }
+
+
     renderAll();
-    showToast("Pin deleted");
+    markAdminChangesPending();
+    const deletedRoutes = Number(res.data?.deleted_routes || 0);
+    showToast(deletedRoutes > 0 ? `"${pinName}" deleted with ${deletedRoutes} linked route(s)` : `"${pinName}" deleted from database`);
   }
+
 
   function deleteLegend(id) {
     const usedBy = state.locations.filter((l) => l.legendId === id).length;
@@ -2231,15 +2805,39 @@
     );
     state.edit = null;
     apiRequest("legends", "DELETE", null, id);
+
+  async function deleteLegend(id) {
+    const usedBy = state.locations.filter(l => String(l.legendId) === String(id)).length;
+    if (usedBy > 0 && !confirm(`This legend is used by ${usedBy} pin(s). Delete anyway?`)) return;
+    else if (usedBy === 0 && !confirm("Delete this legend?")) return;
+    const res = await apiRequest("legends", "DELETE", null, id);
+    if (!res || res.error) { showToast(res?.message || "Could not delete legend"); return; }
+    state.legends = state.legends.filter(l => String(l.id) !== String(id));
+    if (String(state.activeLegendId) === String(id)) {
+      state.activeLegendId = state.legends[0]?.id || null;
+    }
+    // Pins that referenced this legend lose their legendId
+    state.locations = state.locations.map(l =>
+      String(l.legendId) === String(id) ? { ...l, legendId: state.legends[0]?.id || "" } : l
+    );
+    state.edit = null;
+    markAdminChangesPending();
+
     renderAll();
     showToast("Legend deleted");
   }
 
   // ---------- MAP RENDER ----------
   function renderMap() {
+
     const f = state.floors.find((x) => x.id === state.activeFloor);
     $("#floorTag").textContent = f?.label || "—";
     $("#floorName").textContent = f?.name || "No floor selected";
+
+    const f = state.floors.find(x => String(x.id) === String(state.activeFloor));
+    $("#floorTag").textContent  = f?.label || "—";
+    $("#floorName").textContent = f?.name  || "No floor selected";
+
 
     // Floor switch chips
     const sw = $("#floorSwitch");
@@ -2329,8 +2927,13 @@
     layer.innerHTML = "";
     if (state.activeFloor != null) {
       state.locations
+
         .filter((l) => l.floor === state.activeFloor)
         .forEach((loc) => renderPin(loc, layer));
+
+        .filter(l => String(l.floor) === String(state.activeFloor))
+        .forEach(loc => renderPin(loc, layer));
+
     }
 
     renderRouteOverlay();
@@ -2667,11 +3270,15 @@
               route.floor = pin.floor;
               route.points[index] = { x: pin.x, y: pin.y, floor: pin.floor };
             }
+
           } else if (
             !route.destinationId &&
             index === route.points.length - 1 &&
             pin.id !== route.originId
           ) {
+
+          } else if (!route.destinationId && index === route.points.length - 1 && String(pin.id) !== String(route.originId)) {
+>>>>>>> 1f2a698 (I modified admin-dashboard, some js, and php connection, also the styles, it is now appearing to the map.html)
             if (confirm(`Set ${pin.name} as route destination?`)) {
               route.destinationId = pin.id;
               route.destination = pin.name;
@@ -2688,10 +3295,16 @@
   }
 
   function renderPin(loc, layer) {
+
     const pinData = state.edit?.draft?.id === loc.id ? state.edit.draft : loc;
     const el = document.createElement("div");
     const sel =
       state.selectedPinId === loc.id || state.edit?.draft?.id === loc.id;
+
+    const pinData = String(state.edit?.draft?.id) === String(loc.id) ? state.edit.draft : loc;
+    const el  = document.createElement("div");
+    const sel = String(state.selectedPinId) === String(loc.id) || String(state.edit?.draft?.id) === String(loc.id);
+
     el.className = "pin draggable" + (sel ? " selected" : "");
     el.style.left = pinData.x + "%";
     el.style.top = pinData.y + "%";
@@ -2798,13 +3411,18 @@
       const x = clamp(((ev.clientX - r.left) / r.width) * 100, 0, 100);
       const y = clamp(((ev.clientY - r.top) / r.height) * 100, 0, 100);
 
+
       const p = state.locations.find((l) => l.id === loc.id);
       if (p) {
         p.x = x;
         p.y = y;
       }
+=======
+      const p = state.locations.find(l => String(l.id) === String(loc.id));
+      if (p) { p.x = x; p.y = y; }
 
-      if (state.edit?.draft?.id === loc.id) {
+
+      if (String(state.edit?.draft?.id) === String(loc.id)) {
         state.edit.draft.x = x;
         state.edit.draft.y = y;
         const lbl = $("#posLabel");
@@ -2821,6 +3439,7 @@
       const pinEl = document.querySelector(`.pin[data-id="${loc.id}"]`);
       if (pinEl) pinEl.classList.remove("dragging");
       document.body.style.cursor = "default";
+
       if (!dragging) {
         state.selectedPinId = loc.id;
         renderAll();
@@ -2828,6 +3447,17 @@
       setTimeout(() => {
         isDraggingPin = false;
       }, 0);
+
+      if (!dragging) { state.selectedPinId = loc.id; renderAll(); }
+      if (dragging) {
+        const updated = state.locations.find(l => String(l.id) === String(loc.id));
+        if (updated) {
+          markAdminChangesPending();
+          apiRequest("pins", "PUT", pinPayload(updated), updated.id);
+        }
+      }
+      setTimeout(() => { isDraggingPin = false; }, 0);
+
     };
 
     document.addEventListener("mousemove", onMove);
@@ -2867,6 +3497,54 @@
   // ---------- Init ----------
   wirePreviewPanel();
   wireSectionTabs();
+
   renderAll();
   fetchBackendState().then(() => renderAll());
 })();
+
+
+  // Improved Initialization
+  async function initializeApp() {
+      try {
+          // Load data from backend first
+          await Promise.allSettled([
+              fetchRoutes(),
+              fetchFloors?.() || Promise.resolve(),   // optional chaining kung wala pa
+              fetchPins?.()   || Promise.resolve(),
+              fetchLegends?.()|| Promise.resolve()
+          ]);
+
+          // Ensure we have at least one active floor
+          if (!state.activeFloor && state.floors.length > 0) {
+              state.activeFloor = state.floors[0].id;
+          }
+
+          if (!state.activeLegendId && state.legends.length > 0) {
+              state.activeLegendId = state.legends[0].id;
+          }
+
+          state.activeSection = state.activeSection || "floors";
+
+          renderAll();
+
+          // Extra safety render after a short delay
+          setTimeout(() => {
+              renderControlPanel();
+              if (state.activeSection === "routes") renderRouteOverlay();
+          }, 300);
+
+          console.log("✅ SchoolMap Admin Panel initialized successfully");
+      } catch (err) {
+          console.error("Init failed:", err);
+          renderAll(); // fallback render
+      }
+  }
+
+  // Run initialization
+  if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", initializeApp);
+  } else {
+      initializeApp();
+  }
+})();
+

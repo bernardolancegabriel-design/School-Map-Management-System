@@ -164,6 +164,49 @@ function sanitizeString($value)
     return htmlspecialchars(strip_tags(trim((string)$value)), ENT_QUOTES, 'UTF-8');
 }
 
+function saveBase64Image($base64Data)
+{
+    if (empty($base64Data) || !preg_match('/^data:image\/(png|jpeg|jpg|gif|webp);base64,/i', $base64Data)) {
+        return '';
+    }
+    
+    $uploadsDir = __DIR__ . '/../uploads/pins/';
+    if (!is_dir($uploadsDir)) {
+        @mkdir($uploadsDir, 0755, true);
+    }
+    
+    if (!is_writable($uploadsDir)) {
+        return '';
+    }
+    
+    try {
+        $parts = explode(',', $base64Data, 2);
+        if (count($parts) !== 2) return '';
+        
+        $mimeMatch = [];
+        if (!preg_match('/data:image\/([a-z]+);/i', $parts[0], $mimeMatch)) return '';
+        
+        $ext = strtolower($mimeMatch[1]);
+        if (!in_array($ext, ['png', 'jpeg', 'jpg', 'gif', 'webp'], true)) return '';
+        
+        if ($ext === 'jpg') $ext = 'jpeg';
+        
+        $decoded = base64_decode($parts[1], true);
+        if ($decoded === false) return '';
+        
+        $filename = 'pin_' . uniqid() . '_' . time() . '.' . ($ext === 'jpeg' ? 'jpg' : $ext);
+        $filepath = $uploadsDir . $filename;
+        
+        if (file_put_contents($filepath, $decoded) === false) return '';
+        
+        @chmod($filepath, 0644);
+        
+        return '../uploads/pins/' . $filename;
+    } catch (Exception $e) {
+        return '';
+    }
+}
+
 function ensureAutoIncrementColumn(PDO $pdo, $table, $column)
 {
     static $checked = [];
@@ -202,7 +245,7 @@ function ensurePinCoordinates(PDO $pdo)
             "SELECT column_name FROM information_schema.columns " .
             "WHERE table_schema = DATABASE() " .
             "AND table_name = 'pins' " .
-            "AND column_name IN ('x', 'y')"
+            "AND column_name IN ('x', 'y', 'image')"
         );
         $stmt->execute();
         $columns = $stmt->fetchAll(PDO::FETCH_COLUMN);
@@ -212,6 +255,32 @@ function ensurePinCoordinates(PDO $pdo)
         }
         if (!in_array('y', $columns, true)) {
             $pdo->exec("ALTER TABLE pins ADD COLUMN y FLOAT NOT NULL DEFAULT 50");
+        }
+        if (!in_array('image', $columns, true)) {
+            $pdo->exec("ALTER TABLE pins ADD COLUMN image MEDIUMTEXT NULL AFTER category_id");
+        }
+    } catch (PDOException $e) {
+        // Ignore schema migration failures to keep the API available.
+    }
+}
+
+function ensureRouteNameColumn(PDO $pdo)
+{
+    static $checked = false;
+    if ($checked) { return; }
+    $checked = true;
+
+    try {
+        $stmt = $pdo->prepare(
+            "SELECT column_name FROM information_schema.columns " .
+            "WHERE table_schema = DATABASE() " .
+            "AND table_name = 'routes' " .
+            "AND column_name = 'route_name'"
+        );
+        $stmt->execute();
+
+        if (!$stmt->fetchColumn()) {
+            $pdo->exec("ALTER TABLE routes ADD COLUMN route_name VARCHAR(150) NULL AFTER route_id");
         }
     } catch (PDOException $e) {
         // Ignore schema migration failures to keep the API available.
@@ -241,6 +310,7 @@ function ensureVisitorLogsTimeOut(PDO $pdo)
 function ensureDatabaseSchema(PDO $pdo)
 {
     ensurePinCoordinates($pdo);
+    ensureRouteNameColumn($pdo);
     ensureAutoIncrementColumn($pdo, 'pins', 'pin_id');
     ensureAutoIncrementColumn($pdo, 'routes', 'route_id');
     ensureAutoIncrementColumn($pdo, 'route_points', 'id');
@@ -623,7 +693,7 @@ function handleCreatePin(PDO $pdo, $data)
     $name       = sanitizeString($data['name']        ?? '');
     $desc       = sanitizeString($data['description'] ?? '');
     $categoryId = isset($data['category_id']) ? (int)$data['category_id']        : null;
-    $image      = sanitizeString($data['image']       ?? '');
+    $image      = !empty($data['image']) ? saveBase64Image(trim((string)$data['image'])) : '';
     $x          = isset($data['x'])               ? (float)$data['x']                 : 50.0;
     $y          = isset($data['y'])               ? (float)$data['y']                 : 50.0;
  
@@ -687,7 +757,7 @@ function handleUpdatePin(PDO $pdo, $id, $data)
     $name       = sanitizeString($data['name']        ?? '');
     $desc       = sanitizeString($data['description'] ?? '');
     $categoryId = isset($data['category_id']) ? (int)$data['category_id'] : null;
-    $image      = sanitizeString($data['image']       ?? '');
+    $image      = !empty($data['image']) ? saveBase64Image(trim((string)$data['image'])) : '';
     $x          = isset($data['x'])               ? (float)$data['x']                 : null;
     $y          = isset($data['y'])               ? (float)$data['y']                 : null;
  
@@ -728,7 +798,13 @@ function handleUpdatePin(PDO $pdo, $id, $data)
         }
     }
  
-    jsonSuccess('Pin updated successfully.', ['id' => (int)$id]);
+    jsonSuccess('Pin updated successfully.', [
+        'id'          => (int)$id,
+        'name'        => $name,
+        'description' => $desc,
+        'category_id' => $categoryId,
+        'image'       => $image,
+    ]);
 }
  
 function handleDeletePin(PDO $pdo, $id)
@@ -736,12 +812,55 @@ function handleDeletePin(PDO $pdo, $id)
     setAdminSession($pdo);
  
     if (!$id) { jsonError(400, 'Pin ID is required.'); }
+    $pinId = (int)$id;
+    if ($pinId <= 0) { jsonError(400, 'Invalid Pin ID.'); }
  
     try {
-        $stmt = $pdo->prepare("CALL sp_delete_pin(:id)");
-        $stmt->execute([':id' => (int)$id]);
-        jsonSuccess('Pin deleted successfully.');
+        $check = $pdo->prepare("SELECT COUNT(*) FROM pins WHERE pin_id = :id");
+        $check->execute([':id' => $pinId]);
+        if ((int)$check->fetchColumn() === 0) {
+            jsonError(404, 'Pin not found or already deleted.');
+        }
+
+        $routeCountStmt = $pdo->prepare("
+            SELECT COUNT(*)
+            FROM routes
+            WHERE from_pin_id = :from_id OR to_pin_id = :to_id
+        ");
+        $routeCountStmt->execute([':from_id' => $pinId, ':to_id' => $pinId]);
+        $routeCount = (int)$routeCountStmt->fetchColumn();
+
+        $pdo->beginTransaction();
+
+        if ($routeCount > 0) {
+            $deletePoints = $pdo->prepare("
+                DELETE rp
+                FROM route_points rp
+                INNER JOIN routes r ON r.route_id = rp.route_id
+                WHERE r.from_pin_id = :from_id OR r.to_pin_id = :to_id
+            ");
+            $deletePoints->execute([':from_id' => $pinId, ':to_id' => $pinId]);
+
+            $deleteRoutes = $pdo->prepare("
+                DELETE FROM routes
+                WHERE from_pin_id = :from_id OR to_pin_id = :to_id
+            ");
+            $deleteRoutes->execute([':from_id' => $pinId, ':to_id' => $pinId]);
+        }
+
+        $deletePin = $pdo->prepare("DELETE FROM pins WHERE pin_id = :id");
+        $deletePin->execute([':id' => $pinId]);
+
+        $pdo->commit();
+
+        jsonSuccess('Pin deleted successfully.', [
+            'id' => $pinId,
+            'deleted_routes' => $routeCount,
+        ]);
     } catch (PDOException $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
         jsonError(400, 'Failed to delete pin: ' . $e->getMessage());
     }
 }
@@ -753,7 +872,10 @@ function handleDeletePin(PDO $pdo, $id)
 function handleGetRoutes(PDO $pdo)
 {
     $stmt = $pdo->query("
-        SELECT r.route_id   AS id,
+        SELECT r.route_id    AS id,
+               r.route_name  AS name,
+               r.from_pin_id AS from_pin_id,
+               r.to_pin_id   AS to_pin_id,
                r.from_pin_id AS originId,
                r.to_pin_id   AS destinationId,
                r.direction,
@@ -812,6 +934,7 @@ function handleCreateRoute(PDO $pdo, $data)
     // Accept both from_pin_id/to_pin_id (API format) and originId/destinationId (JS format)
     $originRaw      = $data['originId']      ?? $data['from_pin_id']  ?? null;
     $destRaw        = $data['destinationId'] ?? $data['to_pin_id']    ?? null;
+    $routeName      = sanitizeString($data['name'] ?? $data['route_name'] ?? 'Untitled Route');
     $originName     = sanitizeString($data['origin']      ?? '');
     $destName       = sanitizeString($data['destination'] ?? '');
     $direction      = sanitizeString($data['direction']   ?? ($originName && $destName ? "{$originName} to {$destName}" : 'Go straight'));
@@ -843,6 +966,14 @@ function handleCreateRoute(PDO $pdo, $data)
         $result  = $stmt->fetch();
         $routeId = (int)($result['new_route_id'] ?? 0);
         $stmt->closeCursor();
+
+        if ($routeId) {
+            $nameStmt = $pdo->prepare("UPDATE routes SET route_name = :route_name WHERE route_id = :id");
+            $nameStmt->execute([
+                ':route_name' => $routeName,
+                ':id'         => $routeId,
+            ]);
+        }
  
         // Insert route points if provided
         if ($routeId && !empty($points)) {
@@ -863,7 +994,7 @@ function handleCreateRoute(PDO $pdo, $data)
         jsonSuccess('Route created successfully.', [
             'route' => [
                 'id'            => $routeId,
-                'name'          => sanitizeString($data['name'] ?? ''),
+                'name'          => $routeName,
                 'from_pin_id'   => $fromPinId,
                 'to_pin_id'     => $toPinId,
                 'originId'      => $fromPinId,
@@ -890,6 +1021,7 @@ function handleUpdateRoute(PDO $pdo, $id, $data)
  
     $originRaw  = $data['originId']      ?? $data['from_pin_id']  ?? null;
     $destRaw    = $data['destinationId'] ?? $data['to_pin_id']    ?? null;
+    $routeName  = sanitizeString($data['name'] ?? $data['route_name'] ?? 'Untitled Route');
     $originName = sanitizeString($data['origin']      ?? '');
     $destName   = sanitizeString($data['destination'] ?? '');
     $direction  = sanitizeString($data['direction']   ?? '');
@@ -916,6 +1048,12 @@ function handleUpdateRoute(PDO $pdo, $id, $data)
             ':direction'   => $direction ?: null,
         ]);
         $stmt->closeCursor();
+
+        $nameStmt = $pdo->prepare("UPDATE routes SET route_name = :route_name WHERE route_id = :id");
+        $nameStmt->execute([
+            ':route_name' => $routeName,
+            ':id'         => (int)$id,
+        ]);
  
         // Replace route points
         $del = $pdo->prepare("DELETE FROM route_points WHERE route_id = :id");
@@ -939,7 +1077,7 @@ function handleUpdateRoute(PDO $pdo, $id, $data)
         jsonSuccess('Route updated successfully.', [
             'route' => [
                 'id'            => (int)$id,
-                'name'          => sanitizeString($data['name'] ?? ''),
+                'name'          => $routeName,
                 'from_pin_id'   => $fromPinId,
                 'to_pin_id'     => $toPinId,
                 'originId'      => $fromPinId,
@@ -1362,6 +1500,7 @@ function handleGetAuditLog(PDO $pdo)
     jsonResponse(['audit_log' => $logs]);
 }
 
+
 function handleDeleteAuditLog(PDO $pdo)
 {
     try {
@@ -1371,3 +1510,4 @@ function handleDeleteAuditLog(PDO $pdo)
         jsonError(400, 'Failed to clear audit log: ' . $e->getMessage());
     }
 }
+

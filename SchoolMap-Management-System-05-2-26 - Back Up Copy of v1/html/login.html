@@ -4,6 +4,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
   <title>SchoolMap — Login</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -13,6 +16,11 @@
 </head>
 
 <body>
+  <script>
+    if (window.location.protocol === 'file:') {
+      window.location.replace('http://localhost/SCHOOL%20MAPS/REPO/School-Map-Management-System/SchoolMap-Management-System-05-2-26%20-%20Back%20Up%20Copy%20of%20v1/html/login.html');
+    }
+  </script>
   <!-- ===================================================
        PAGE: LOGIN
   ==================================================== -->
@@ -77,8 +85,8 @@
   <!-- Toast Notification -->
   <div id="toast" class="toast" style="display: none"></div>
 
-  <script src="../assets/js/core.js"></script>
-  <script src="../assets/js/login.js"></script>
+  <script src="../assets/js/core.js?v=20260510-0915"></script>
+  <script src="../assets/js/login.js?v=20260510-0915"></script>
 </body>
 
 </html>
