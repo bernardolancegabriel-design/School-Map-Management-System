@@ -140,7 +140,7 @@ async function loadAdmins() {
         email: admin.email || "",
         username: (admin.email || "").split("@")[0],
         role: admin.role || "admin",
-        isDisabled: admin.is_disabled === 1 || admin.is_disabled === true
+        isDisabled: !!(admin.isDisabled || admin.is_disabled)
       };
     });
   } else if (serverResult.status === 401 || serverResult.status === 403) {
@@ -167,7 +167,7 @@ async function loadAdmins() {
       '</div>' +
       '<div class="sa-admin-actions">' +
         '<button class="wobbly-btn wobbly-btn-sm wobbly-btn-secondary" onclick="resetAdminPassword(\'' + admin.id + '\')">Reset Pass</button>' +
-        '<button class="wobbly-btn wobbly-btn-sm ' + (admin.isDisabled ? 'wobbly-btn-primary' : 'wobbly-btn-secondary') + '" onclick="toggleAdminStatus(\'' + admin.id + '\')">' + (admin.isDisabled ? 'Enable' : 'Disable') + '</button>' +
+        '<button class="wobbly-btn wobbly-btn-sm ' + (admin.isDisabled ? 'wobbly-btn-primary' : 'wobbly-btn-secondary') + '" onclick="toggleAdminStatus(\'' + admin.id + '\', ' + (admin.isDisabled ? 'true' : 'false') + ')">' + (admin.isDisabled ? 'Enable' : 'Disable') + '</button>' +
         (admin.id !== AppState.currentUser.id ? '<button class="wobbly-btn wobbly-btn-sm wobbly-btn-danger" data-action="delete-admin" data-admin-id="' + escHtml(admin.id) + '">Delete</button>' : '') +
       '</div>' +
     '</div>';
@@ -276,31 +276,50 @@ function deleteAdmin(id) {
     });
 }
 
-function toggleAdminStatus(id) {
+function toggleAdminStatus(id, currentlyDisabled) {
+  // currentlyDisabled is passed directly from the button so we don't rely on localStorage
+  var action = currentlyDisabled ? "enable" : "disable";
+  var actionLabel = currentlyDisabled ? "Enable" : "Disable";
+  var newDisabledState = !currentlyDisabled;
+
+  // Get admin name for the confirmation message
   var users = getStoredUsers();
   var user = users.find(function(u) { return String(u.id) === String(id); });
-  if (!user) { showToast("Admin not found."); return; }
+  var adminName = user ? user.fullName : "this admin";
 
-  var newRole = user.isDisabled ? (user._prevRole || "admin") : "viewer";
-  var API_BASE = "../backend/api.php";
+  // Confirmation dialog
+  var confirmed = confirm(
+    actionLabel + " account?\n\n" +
+    "Admin: " + adminName + "\n\n" +
+    (currentlyDisabled
+      ? "This will allow the admin to log in again."
+      : "This will prevent the admin from logging in.")
+  );
+  if (!confirmed) return;
 
-  fetch(API_BASE + "?action=admins&id=" + encodeURIComponent(id), {
+  fetch("../backend/api.php?action=admins&id=" + encodeURIComponent(id), {
     method: "PUT",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ role: newRole })
+    body: JSON.stringify({ isDisabled: newDisabledState })
   })
   .then(function(response) { return response.json(); })
   .then(function(payload) {
     if (payload && payload.success) {
-      user._prevRole  = user.isDisabled ? undefined : user.role;
-      user.isDisabled = !user.isDisabled;
-      storeUsers(users);
-      addLog("admin", (user.isDisabled ? "Disabled" : "Enabled") + " admin: " + user.fullName, "Admin Management");
-      loadAdmins();
-      showToast(user.isDisabled ? "Admin disabled." : "Admin enabled.");
+      // Update localStorage to stay in sync
+      if (user) {
+        user.isDisabled = newDisabledState;
+        storeUsers(users);
+      }
+      addLog("admin",
+        (newDisabledState ? "Disabled" : "Enabled") + " admin: " + adminName,
+        "Admin Management");
+      loadAdmins(); // Reload from DB to get fresh state
+      showToast(newDisabledState
+        ? adminName + " has been disabled."
+        : adminName + " has been enabled.");
     } else {
-      showToast("Failed to update status: " + ((payload && payload.message) || "Server error"));
+      showToast("Failed: " + ((payload && payload.message) || "Server error"));
     }
   })
   .catch(function() {
@@ -466,33 +485,45 @@ function addLog(category, action, details) {
 function loadLogs() {
   var tbody = document.getElementById("logs-table-body");
   if (!tbody) return;
-  var logs = storageGet(APP_LOGS_KEY, []);
 
-  var filtered = logs;
-  if (currentLogFilter !== "all") {
-    filtered = logs.filter(function (log) {
-      return log.category === currentLogFilter;
+  tbody.innerHTML = "<tr><td colspan='5' style='padding:20px; text-align:center; opacity:0.5;'>Loading...</td></tr>";
+
+  fetch("../backend/api.php?action=audit_log", { credentials: "same-origin" })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      var logs = (data && data.audit_log) ? data.audit_log : [];
+
+      var filtered = logs;
+      if (currentLogFilter !== "all") {
+        filtered = logs.filter(function(log) {
+          return log.action && log.action.toLowerCase() === currentLogFilter;
+        });
+      }
+
+      if (filtered.length === 0) {
+        tbody.innerHTML = "<tr><td colspan='5' style='padding:20px; text-align:center; opacity:0.5;'>No logs found.</td></tr>";
+        return;
+      }
+
+      var html = "";
+      filtered.forEach(function(log) {
+        var ts = new Date(log.timestamp).toLocaleString();
+        var cat = (log.action || "").toLowerCase();
+        var catClass = cat === "login" ? "sa-badge-success" : (cat === "admin" ? "sa-badge-danger" : "");
+        html += "<tr>" +
+          "<td>" + ts + "</td>" +
+          "<td><strong>" + escHtml(log.admin_name || "System") + "</strong></td>" +
+          "<td>" + escHtml(log.description || "") + "</td>" +
+          "<td><span class='sa-badge " + catClass + "'>" + escHtml(cat) + "</span></td>" +
+          "<td></td>" +
+        "</tr>";
+      });
+      tbody.innerHTML = html;
+    })
+    .catch(function(err) {
+      tbody.innerHTML = "<tr><td colspan='5' style='padding:20px; text-align:center; opacity:0.5;'>Failed to load logs.</td></tr>";
+      console.warn("Failed to load audit log:", err);
     });
-  }
-
-  if (filtered.length === 0) {
-    tbody.innerHTML = "<tr><td colspan='5' style='padding:20px; text-align:center; opacity:0.5;'>No logs found.</td></tr>";
-    return;
-  }
-
-  var html = "";
-  filtered.forEach(function (log) {
-    var ts = new Date(log.timestamp).toLocaleString();
-    var catClass = log.category === "login" ? "sa-badge-success" : (log.category === "admin" ? "sa-badge-danger" : "");
-    html += "<tr>" +
-      "<td>" + ts + "</td>" +
-      "<td><strong>" + escHtml(log.user) + "</strong></td>" +
-      "<td>" + escHtml(log.action) + "</td>" +
-      "<td><span class='sa-badge " + catClass + "'>" + escHtml(log.category) + "</span></td>" +
-      "<td>" + escHtml(log.details) + "</td>" +
-    "</tr>";
-  });
-  tbody.innerHTML = html;
 }
 
 function filterLogs(filter) {
@@ -508,9 +539,19 @@ function filterLogs(filter) {
 
 function clearLogs() {
   if (!confirm("Delete all system logs?")) return;
-  storageSet(APP_LOGS_KEY, []);
-  loadLogs();
-  showToast("Logs cleared.");
+  fetch("../backend/api.php?action=audit_log", {
+    method: "DELETE",
+    credentials: "same-origin",
+  }).then(function() {
+    storageSet(APP_LOGS_KEY, []);
+    loadLogs();
+    showToast("Logs cleared.");
+  }).catch(function(err) {
+    console.warn("Failed to clear logs from DB:", err);
+    storageSet(APP_LOGS_KEY, []);
+    loadLogs();
+    showToast("Logs cleared locally.");
+  });
 }
 
 /* ====================== 4. ARCHIVE MANAGEMENT ====================== */
@@ -606,93 +647,113 @@ function deleteArchive(idx) {
 /* ====================== 5. REPORTS ====================== */
 
 function loadReports() {
-  var logs = storageGet(APP_LOGS_KEY, []);
-  var users = getStoredUsers();
+  fetch("../backend/api.php?action=visitor_logs", { credentials: "same-origin" })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      var logs = (data && data.visitor_logs) ? data.visitor_logs : [];
+      var today = new Date().toDateString();
 
-  // Total visits (visitor category logs)
-  var totalVisits = logs.filter(function (l) { return l.category === "visitor"; }).length;
-  var el1 = document.getElementById("report-total-visits");
-  if (el1) el1.textContent = totalVisits;
+      var el1 = document.getElementById("report-total-visits");
+      if (el1) el1.textContent = logs.length;
 
-  // Today's visits
-  var today = new Date().toDateString();
-  var todayVisits = logs.filter(function (l) {
-    return l.category === "visitor" && new Date(l.timestamp).toDateString() === today;
-  }).length;
-  var el2 = document.getElementById("report-today-visits");
-  if (el2) el2.textContent = todayVisits;
+      var todayVisits = logs.filter(function(l) {
+        return l.date && new Date(l.date).toDateString() === today;
+      }).length;
+      var el2 = document.getElementById("report-today-visits");
+      if (el2) el2.textContent = todayVisits;
+    })
+    .catch(function(err) { console.warn("Failed to load visitor logs for reports:", err); });
 
-  // Active admins
-  var activeAdmins = users.filter(function (u) { return u.role === "admin" && !u.isDisabled; }).length;
-  var el3 = document.getElementById("report-active-admins");
-  if (el3) el3.textContent = activeAdmins;
+  // Active admins — fetch from API
+  fetch("../backend/api.php?action=admins", { credentials: "same-origin" })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      var admins = (data && data.data && data.data.admins) ? data.data.admins : [];
+      var activeAdmins = admins.filter(function(u) { return !u.isDisabled; }).length;
+      var el3 = document.getElementById("report-active-admins");
+      if (el3) el3.textContent = activeAdmins;
+    })
+    .catch(function(err) { console.warn("Failed to load admins for reports:", err); });
 
-  // Top locations (from location data)
-  var locations = storageGet(APP_LOCATIONS_KEY, []);
-  var topContainer = document.getElementById("report-top-locations");
-  if (topContainer) {
-    if (locations.length === 0) {
-      topContainer.innerHTML = '<p style="opacity:0.5; text-align:center; padding:16px;">No locations data available.</p>';
-    } else {
+  // Top locations — fetch from API
+  fetch("../backend/api.php?action=pins", { credentials: "same-origin" })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      var locations = (data && data.pins) ? data.pins : [];
+      var topContainer = document.getElementById("report-top-locations");
+      if (!topContainer) return;
+      if (locations.length === 0) {
+        topContainer.innerHTML = '<p style="opacity:0.5; text-align:center; padding:16px;">No locations data available.</p>';
+        return;
+      }
       var html = "";
-      var topLocations = locations.slice(0, 5);
-      topLocations.forEach(function (loc, i) {
+      locations.slice(0, 5).forEach(function(loc, i) {
         html += '<div class="sa-admin-item" style="padding:8px 0;">' +
           '<div class="sa-admin-info">' +
             '<strong>#' + (i + 1) + ' ' + escHtml(loc.name) + '</strong>' +
-            '<small>Floor ' + loc.floor + '</small>' +
+            '<small>Floor ' + (loc.map_id || loc.floor || "") + '</small>' +
           '</div>' +
         '</div>';
       });
       topContainer.innerHTML = html;
-    }
-  }
+    })
+    .catch(function(err) { console.warn("Failed to load pins for reports:", err); });
 }
 
 function exportReport(type) {
-  var logs = storageGet(APP_LOGS_KEY, []);
-  var now = new Date();
-  var filtered = [];
-  var label = "";
+  fetch("../backend/api.php?action=visitor_logs", { credentials: "same-origin" })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      var logs = (data && data.visitor_logs) ? data.visitor_logs : [];
+      var now = new Date();
+      var filtered = [];
+      var label = "";
 
-  if (type === "daily") {
-    label = "Daily Report - " + now.toLocaleDateString();
-    filtered = logs.filter(function (l) {
-      return new Date(l.timestamp).toDateString() === now.toDateString();
+      if (type === "daily") {
+        label = "Daily Report - " + now.toLocaleDateString();
+        filtered = logs.filter(function(l) {
+          return l.date && new Date(l.date).toDateString() === now.toDateString();
+        });
+      } else if (type === "weekly") {
+        label = "Weekly Report";
+        var weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        filtered = logs.filter(function(l) {
+          return l.date && new Date(l.date) >= weekAgo;
+        });
+      } else {
+        label = "Yearly Report - " + now.getFullYear();
+        filtered = logs.filter(function(l) {
+          return l.date && new Date(l.date).getFullYear() === now.getFullYear();
+        });
+      }
+
+      var csv = "Date,Name,Category,Purpose,Destination,Time In,Time Out,Plate No\n";
+      filtered.forEach(function(log) {
+        csv += '"' + (log.date || "") + '","' +
+          (log.name || "") + '","' +
+          (log.category || "") + '","' +
+          (log.purpose || "") + '","' +
+          (log.destination || "") + '","' +
+          (log.time_in || "") + '","' +
+          (log.time_out || "") + '","' +
+          (log.plate_no || "") + '"\n';
+      });
+
+      var blob = new Blob([csv], { type: "text/csv" });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url;
+      a.download = "schoolmap_visitors_" + type + "_" + now.toISOString().slice(0, 10) + ".csv";
+      a.click();
+      URL.revokeObjectURL(url);
+
+      addLog("report", "Exported " + type + " visitor report (" + filtered.length + " records)", "Reports");
+      showToast(label + " exported! (" + filtered.length + " records)");
+    })
+    .catch(function(err) {
+      console.warn("Failed to export report:", err);
+      showToast("Failed to export report. Please try again.");
     });
-  } else if (type === "weekly") {
-    label = "Weekly Report";
-    var weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-    filtered = logs.filter(function (l) {
-      return new Date(l.timestamp) >= weekAgo;
-    });
-  } else {
-    label = "Yearly Report - " + now.getFullYear();
-    filtered = logs.filter(function (l) {
-      return new Date(l.timestamp).getFullYear() === now.getFullYear();
-    });
-  }
-
-  // Generate CSV
-  var csv = "Timestamp,User,Action,Category,Details\n";
-  filtered.forEach(function (log) {
-    csv += '"' + new Date(log.timestamp).toLocaleString() + '","' +
-      (log.user || "") + '","' +
-      (log.action || "") + '","' +
-      (log.category || "") + '","' +
-      (log.details || "") + '"\n';
-  });
-
-  var blob = new Blob([csv], { type: "text/csv" });
-  var url = URL.createObjectURL(blob);
-  var a = document.createElement("a");
-  a.href = url;
-  a.download = "schoolmap_" + type + "_report_" + now.toISOString().slice(0, 10) + ".csv";
-  a.click();
-  URL.revokeObjectURL(url);
-
-  addLog("report", "Exported " + type + " report (" + filtered.length + " records)", "Reports");
-  showToast(label + " exported! (" + filtered.length + " records)");
 }
 
 /* ====================== 6. SETTINGS ====================== */
