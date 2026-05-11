@@ -372,6 +372,11 @@ function dispatchRequest(PDO $pdo, string $action, string $action2, string $reso
         case 'me':
             handleGetCurrentUser($pdo);
             break;
+
+        case 'verify_otp':
+            if ($method !== 'POST') { jsonError(405, 'Method Not Allowed'); }
+            handleVerifyOtp($pdo, $requestData);
+            break;    
  
         /* -------------------------------------------------------
            ADMINS
@@ -519,6 +524,12 @@ function handleLogin(PDO $pdo, array $data)
     if ((int)($user['is_disabled'] ?? 0) === 1) {
         jsonError(403, 'Your account has been disabled. Please contact the Super Admin.');
     }
+
+    // ✅ If super_admin, don't set session yet — require OTP first
+    if ($user['role'] === 'super_admin') {
+        jsonResponse(['success' => false, 'requires_otp' => true]);
+    }
+
  
     // Store session
     $_SESSION['user_id']   = $user['user_id'];
@@ -533,6 +544,62 @@ function handleLogin(PDO $pdo, array $data)
         'role'     => $user['role'],
     ]);
 }
+
+function handleVerifyOtp(PDO $pdo, array $data)
+{
+    require_once 'D:/xampp/htdocs/School-Map-Management-System/vendor/autoload.php';
+
+    $identifier = isset($data['identifier']) ? trim($data['identifier']) : '';
+    $otp        = isset($data['otp'])        ? trim($data['otp'])        : '';
+
+    if (!$identifier || !$otp) {
+        jsonError(400, 'Identifier and OTP code are required.');
+    }
+
+    // Fetch the super_admin by email or username
+    $stmt = $pdo->prepare("
+        SELECT user_id, name, email, role, twofa_secret AS totp_secret
+        FROM   admin
+        WHERE  (email = :id1 OR email = :id2)
+        AND    role = 'super_admin'
+        LIMIT  1
+    ");
+    $stmt->execute([
+        ':id1' => $identifier,
+        ':id2' => $identifier . '@school.com',
+    ]);
+    $user = $stmt->fetch();
+
+    if (!$user) {
+        jsonError(403, 'Unauthorized.');
+    }
+
+    if (empty($user['totp_secret'])) {
+        jsonError(500, 'OTP not configured for this account. Please contact support.');
+    }
+
+    // Validate TOTP using PragmaRX
+    $google2fa   = new \PragmaRX\Google2FA\Google2FA();
+    $isValid     = $google2fa->verifyKey($user['totp_secret'], $otp);
+
+    if (!$isValid) {
+        jsonError(401, 'Invalid OTP code. Please try again.');
+    }
+
+    // OTP passed — now set session
+    $_SESSION['user_id']   = $user['user_id'];
+    $_SESSION['user_role'] = $user['role'];
+    $_SESSION['user_name'] = $user['name'];
+
+    jsonSuccess('Login successful', [
+        'id'       => $user['user_id'],
+        'fullName' => $user['name'],
+        'email'    => $user['email'],
+        'username' => explode('@', $user['email'])[0],
+        'role'     => $user['role'],
+    ]);
+}    
+
  
 function handleLogout()
 {

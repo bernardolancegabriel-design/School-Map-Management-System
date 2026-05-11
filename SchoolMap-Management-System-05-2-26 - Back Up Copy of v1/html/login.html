@@ -50,22 +50,40 @@
           <p class="auth-subtitle">Welcome back to SchoolMap!</p>
         </div>
         <form id="login-form" onsubmit="handleLogin(event)" class="auth-form">
-          <div class="field-group">
-            <label for="login-identifier" class="field-label">Email or Username</label>
-            <input type="text" id="login-identifier" class="wobbly-input" placeholder="your@email.edu or username"
-              required />
+          <div id="step-credentials">
+            <div class="field-group">
+              <label for="login-identifier" class="field-label">Email or Username</label>
+              <input type="text" id="login-identifier" class="wobbly-input"
+                placeholder="your@email.edu or username" required />
+            </div>
+            <div class="field-group" style="position: relative">
+              <label for="login-password" class="field-label">Password</label>
+              <input type="password" id="login-password" class="wobbly-input"
+                placeholder="Enter your password" required />
+              <button type="button" class="pw-toggle"
+                onclick="togglePasswordVisibility('login-password', this)">
+                <svg class="eye-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18"
+                  fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                  <circle cx="12" cy="12" r="3" />
+                </svg>
+              </button>
+            </div>
           </div>
-          <div class="field-group" style="position: relative">
-            <label for="login-password" class="field-label">Password</label>
-            <input type="password" id="login-password" class="wobbly-input" placeholder="Enter your password"
-              required />
-            <button type="button" class="pw-toggle" onclick="togglePasswordVisibility('login-password', this)">
-              <svg class="eye-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none"
-                viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                <circle cx="12" cy="12" r="3" />
-              </svg>
-            </button>
+          <div id="step-otp" style="display: none">
+            <div class="field-group">
+                <label for="login-otp" class="field-label">Authenticator Code</label>
+                <p style="font-size: 13px; color: #666; margin: 0 0 8px 0;">
+                  Open Google Authenticator and enter the 6-digit code for SchoolMap.
+                </p>
+                <input type="text" id="login-otp" class="wobbly-input"
+                  placeholder="000000" maxlength="6"
+                  inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code" />
+            </div>
+              <button type="button"
+                style="background:none;border:none;color:#192a57;font-size:13px;cursor:pointer;padding:0;margin-bottom:8px;"
+                onclick="resetLoginForm()">← Back to login
+              </button>
           </div>
           <div id="login-error" class="error-box" style="display: none"></div>
           <button type="submit" id="login-submit" class="wobbly-btn wobbly-btn-primary w-full">
@@ -77,6 +95,7 @@
       </div>
     </div>
   </div>
+
   <!-- Toast Notification -->
   <div id="toast" class="toast" style="display: none"></div>
 

@@ -15,6 +15,8 @@ var API_BASE = window.location.protocol === "file:"
   ? LOCALHOST_API_BASE
   : (typeof getApiBase === "function" ? getApiBase() : "../backend/api.php");
 
+var pendingIdentifier = null;
+
 document.addEventListener("DOMContentLoaded", function() {
   if (typeof ensureAdminUser === "function") {
     ensureAdminUser();
@@ -29,6 +31,10 @@ function resetLoginForm() {
   if (err) { err.style.display = "none"; err.textContent = ""; }
   var btn = document.getElementById("login-submit");
   if (btn) { btn.textContent = "Sign In"; btn.disabled = false; }
+
+   pendingIdentifier = null;
+  document.getElementById("step-credentials").style.display = "";
+  document.getElementById("step-otp").style.display = "none";
 }
 
 async function apiLogin(identifier, password) {
@@ -68,8 +74,51 @@ async function apiLogin(identifier, password) {
   }
 }
 
+async function apiVerifyOtp(identifier, otp) {
+  try {
+    var otpUrl = window.location.protocol === "file:"
+      ? LOCALHOST_API_BASE + "?action=verify_otp"
+      : (typeof apiUrl === "function" ? apiUrl("verify_otp") : API_BASE + "?action=verify_otp");
+
+    var response = await fetch(otpUrl, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ identifier: identifier, otp: otp })
+    });
+
+    var payload = null;
+    try {
+      payload = await response.json();
+    } catch (err) {
+      payload = null;
+    }
+
+    return {
+      ok: response.ok,
+      status: response.status,
+      payload: payload
+    };
+  } catch (err) {
+    console.warn("OTP API connection failed:", err);
+    return {
+      ok: false,
+      status: 0,
+      payload: null
+    };
+  }
+}
+
 async function handleLogin(event) {
   event.preventDefault();
+
+   // if OTP step is visible, route to OTP handler instead
+  if (document.getElementById("step-otp").style.display !== "none") {
+    handleOtpSubmit(event);
+    return;
+  }
   var identifier = document.getElementById("login-identifier").value.trim();
   var password    = document.getElementById("login-password").value;
   var errBox      = document.getElementById("login-error");
@@ -83,6 +132,19 @@ async function handleLogin(event) {
 
   if (!loginResult.ok && loginResult.status === 401 && identifier.indexOf("@") === -1) {
     loginResult = await apiLogin(identifier + "@school.com", password);
+  }
+
+  // super_admin detected — switch to OTP step, don't proceed
+  if (loginResult.payload && loginResult.payload.requires_otp) {
+    pendingIdentifier = identifier;
+    document.getElementById("step-credentials").style.display = "none";
+    document.getElementById("step-otp").style.display = "";
+    document.getElementById("login-otp").value = "";
+    document.getElementById("login-otp").focus();
+    submitBtn.textContent = "Verify OTP";
+    submitBtn.disabled    = false;
+    errBox.style.display  = "none";
+    return;
   }
 
   if (loginResult.ok && loginResult.payload && loginResult.payload.success) {
@@ -119,6 +181,57 @@ async function handleLogin(event) {
     : "Invalid email/username or password.";
   errBox.style.display  = "";
   submitBtn.textContent = "Sign In";
+  submitBtn.disabled    = false;
+}
+
+// called by the OTP form submit
+async function handleOtpSubmit(event) {
+  event.preventDefault();
+  var otp       = document.getElementById("login-otp").value.trim();
+  var errBox    = document.getElementById("login-error");
+  var submitBtn = document.getElementById("login-submit");
+
+  if (!otp || otp.length !== 6) {
+    errBox.textContent   = "Please enter the 6-digit code from Google Authenticator.";
+    errBox.style.display = "";
+    return;
+  }
+
+  errBox.style.display  = "none";
+  submitBtn.textContent = "Verifying...";
+  submitBtn.disabled    = true;
+
+  var otpResult = await apiVerifyOtp(pendingIdentifier, otp);
+
+  if (otpResult.ok && otpResult.payload && otpResult.payload.success) {
+    var userData = otpResult.payload.data || {};
+    var safeUser = {
+      id:       userData.id,
+      fullName: userData.fullName || userData.name || pendingIdentifier,
+      email:    userData.email    || pendingIdentifier,
+      username: userData.username || (userData.email || pendingIdentifier).split("@")[0],
+      role:     userData.role     || "super_admin"
+    };
+    AppState.currentUser = safeUser;
+    setCurrentUser(safeUser);
+    showToast("Welcome back, " + safeUser.fullName.split(" ")[0] + "! 👋");
+    window.location.href = "super-admin-dashboard.html";
+    return;
+  }
+
+  if (otpResult.status === 0) {
+    errBox.textContent    = "Cannot connect to the server. Please check your connection and try again.";
+    errBox.style.display  = "";
+    submitBtn.textContent = "Verify OTP";
+    submitBtn.disabled    = false;
+    return;
+  }
+
+  errBox.textContent    = (otpResult.payload && otpResult.payload.message)
+    ? otpResult.payload.message
+    : "Invalid OTP code. Please try again.";
+  errBox.style.display  = "";
+  submitBtn.textContent = "Verify OTP";
   submitBtn.disabled    = false;
 }
 
