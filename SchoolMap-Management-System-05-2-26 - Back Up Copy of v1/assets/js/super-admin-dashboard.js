@@ -17,7 +17,7 @@ document.addEventListener("DOMContentLoaded", async function () {
   var user = AppState.currentUser;
 
   // 2. Init UI
-  document.getElementById("sa-username-display").textContent = user.fullName;
+  document.getElementById("sa-username-display").textContent = "Super Administrator";
 
   // 3. Load all data
   loadAdmins();
@@ -27,20 +27,6 @@ document.addEventListener("DOMContentLoaded", async function () {
   loadArchives();
   loadReports();
 
-  // Wire delete button clicks via delegation
-  var adminList = document.getElementById("admin-list-container");
-  if (adminList) {
-    adminList.addEventListener("click", function (event) {
-      var button = event.target.closest("button[data-action='delete-admin']");
-      if (!button) return;
-      var id = button.getAttribute("data-admin-id");
-      if (id) {
-        console.log("deleteAdmin delegation", id);
-        deleteAdmin(id);
-      }
-    });
-  }
-
   // 4. Wire restore file input
   var restoreFile = document.getElementById("restore-file");
   if (restoreFile) {
@@ -49,6 +35,70 @@ document.addEventListener("DOMContentLoaded", async function () {
 });
 
 var API_BASE = typeof getApiBase === "function" ? getApiBase() : "../backend/api.php";
+var saAdminsCache = [];
+var passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*]).{8,}$/;
+var pendingAdminStatusChange = null;
+var saArchiveItemsCache = [];
+var currentArchiveFilter = "all";
+var currentArchiveSearch = "";
+
+function showSaActionConfirm(options) {
+  var config = Object.assign({
+    title: "Confirm Action",
+    message: "Are you sure?",
+    confirmText: "Confirm",
+    danger: true,
+  }, options || {});
+
+  var overlay = document.getElementById("sa-action-confirm");
+  if (!overlay) {
+    overlay = document.createElement("div");
+    overlay.id = "sa-action-confirm";
+    overlay.className = "app-action-confirm-overlay";
+    overlay.hidden = true;
+    overlay.innerHTML =
+      '<div class="app-action-confirm-card">' +
+        '<h3 class="card-heading" data-confirm-title></h3>' +
+        '<p data-confirm-message></p>' +
+        '<div class="app-action-confirm-actions">' +
+          '<button type="button" class="wobbly-btn wobbly-btn-secondary" data-confirm-cancel>Cancel</button>' +
+          '<button type="button" class="wobbly-btn" data-confirm-ok>Confirm</button>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(overlay);
+  }
+
+  overlay.querySelector("[data-confirm-title]").textContent = config.title;
+  overlay.querySelector("[data-confirm-message]").textContent = config.message;
+  var okBtn = overlay.querySelector("[data-confirm-ok]");
+  var cancelBtn = overlay.querySelector("[data-confirm-cancel]");
+  okBtn.textContent = config.confirmText;
+  okBtn.className = "wobbly-btn " + (config.danger ? "wobbly-btn-danger" : "wobbly-btn-primary");
+  overlay.hidden = false;
+
+  return new Promise(function(resolve) {
+    function close(value) {
+      overlay.hidden = true;
+      okBtn.removeEventListener("click", onOk);
+      cancelBtn.removeEventListener("click", onCancel);
+      overlay.removeEventListener("click", onBackdrop);
+      document.removeEventListener("keydown", onKeydown);
+      resolve(value);
+    }
+    function onOk() { close(true); }
+    function onCancel() { close(false); }
+    function onBackdrop(event) {
+      if (event.target === overlay) close(false);
+    }
+    function onKeydown(event) {
+      if (event.key === "Escape") close(false);
+    }
+    okBtn.addEventListener("click", onOk);
+    cancelBtn.addEventListener("click", onCancel);
+    overlay.addEventListener("click", onBackdrop);
+    document.addEventListener("keydown", onKeydown);
+  });
+}
 
 async function apiRequest(action, method, data, id) {
   try {
@@ -125,6 +175,42 @@ function switchTab(tabName) {
   if (tabName === "backup") loadBackupHistory();
 }
 
+function toggleSuperAdminMenu(button) {
+  var dropdown = document.getElementById("sa-user-dropdown");
+  if (!dropdown) return;
+
+  if (dropdown.style.display !== "none") {
+    dropdown.style.display = "none";
+    return;
+  }
+
+  if (button) {
+    var rect = button.getBoundingClientRect();
+    dropdown.style.top = rect.bottom + 4 + "px";
+    dropdown.style.right = window.innerWidth - rect.right + "px";
+    dropdown.style.left = "auto";
+  }
+  dropdown.style.display = "";
+}
+
+document.addEventListener("click", function (event) {
+  var dropdown = document.getElementById("sa-user-dropdown");
+  var trigger = event.target.closest(".sa-user-actions");
+  if (!dropdown || trigger || dropdown.contains(event.target)) return;
+  dropdown.style.display = "none";
+});
+
+function togglePasswordVisibility(inputId, button) {
+  var input = document.getElementById(inputId);
+  if (!input || !button) return;
+
+  var isHidden = input.type === "password";
+  input.type = isHidden ? "text" : "password";
+  button.innerHTML = isHidden
+    ? '<svg class="eye-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>'
+    : '<svg class="eye-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+}
+
 /* ====================== 1. ADMIN MANAGEMENT ====================== */
 
 async function loadAdmins() {
@@ -133,7 +219,7 @@ async function loadAdmins() {
   var users = getStoredUsers();
 
   var admins = users.filter(function (u) {
-    return u.role === "admin";
+    return u.role === "admin" || u.role === "super_admin";
   });
 
   var serverResult = await apiRequest("admins", "GET");
@@ -154,13 +240,66 @@ async function loadAdmins() {
     return;
   }
 
-  if (admins.length === 0) {
-    container.innerHTML = '<p style="opacity:0.5; text-align:center; padding:20px;">No admin accounts yet. Create one using the form.</p>';
+  saAdminsCache = admins;
+  renderAdminList();
+}
+
+function filterExistingAdmins() {
+  renderAdminList();
+}
+
+function renderAdminList() {
+  var container = document.getElementById("admin-list-container");
+  if (!container) return;
+
+  var searchInput = document.getElementById("admin-search");
+  var query = searchInput ? searchInput.value.trim().toLowerCase() : "";
+  var accounts = saAdminsCache.filter(function (admin) {
+    if (!query) return true;
+    return (
+      String(admin.fullName || "").toLowerCase().indexOf(query) !== -1 ||
+      String(admin.email || "").toLowerCase().indexOf(query) !== -1 ||
+      String(admin.role || "").toLowerCase().indexOf(query) !== -1
+    );
+  });
+
+  if (saAdminsCache.length === 0) {
+    container.innerHTML = '<p style="opacity:0.5; text-align:center; padding:20px;">No accounts found yet. Create one using the form.</p>';
+    return;
+  }
+  if (accounts.length === 0) {
+    container.innerHTML = '<p style="opacity:0.5; text-align:center; padding:20px;">No accounts match your search.</p>';
     return;
   }
 
+  var superAdmins = accounts.filter(function(admin) {
+    return String(admin.role || "").toLowerCase() === "super_admin";
+  });
+  var regularAdmins = accounts.filter(function(admin) {
+    return String(admin.role || "").toLowerCase() !== "super_admin";
+  });
+
   var html = "";
-  admins.forEach(function (admin) {
+  if (superAdmins.length) {
+    html += '<div class="sa-account-group-label">Super Admin</div>';
+    superAdmins.forEach(function(admin) {
+      html += '<div class="sa-admin-item sa-super-admin-item">' +
+        '<div class="sa-admin-info">' +
+          '<strong>' + escHtml(admin.fullName || "Super Administrator") + ' <span class="sa-badge sa-badge-password">Super Admin</span></strong>' +
+          '<small>' + escHtml(admin.email || "") + '</small>' +
+        '</div>' +
+        '<div class="sa-admin-actions">' +
+          '<button class="wobbly-btn wobbly-btn-sm wobbly-btn-secondary" onclick="resetAdminPassword(\'' + admin.id + '\')">Reset Pass</button>' +
+          '<span class="sa-protected-account">Protected Account</span>' +
+        '</div>' +
+      '</div>';
+    });
+  }
+
+  if (regularAdmins.length) {
+    html += '<div class="sa-account-group-label">Admin Accounts</div>';
+  }
+  regularAdmins.forEach(function (admin) {
     var statusBadge = admin.isDisabled
       ? '<span class="sa-badge sa-badge-danger">Disabled</span>'
       : '<span class="sa-badge sa-badge-success">Active</span>';
@@ -172,11 +311,11 @@ async function loadAdmins() {
       '</div>' +
       '<div class="sa-admin-actions">' +
         '<button class="wobbly-btn wobbly-btn-sm wobbly-btn-secondary" onclick="resetAdminPassword(\'' + admin.id + '\')">Reset Pass</button>' +
-        '<button class="wobbly-btn wobbly-btn-sm ' + (admin.isDisabled ? 'wobbly-btn-primary' : 'wobbly-btn-secondary') + '" onclick="toggleAdminStatus(\'' + admin.id + '\', ' + (admin.isDisabled ? 'true' : 'false') + ')">' + (admin.isDisabled ? 'Enable' : 'Disable') + '</button>' +
-        (admin.id !== AppState.currentUser.id ? '<button class="wobbly-btn wobbly-btn-sm wobbly-btn-danger" data-action="delete-admin" data-admin-id="' + escHtml(admin.id) + '">Delete</button>' : '') +
+        '<button class="wobbly-btn wobbly-btn-sm ' + (admin.isDisabled ? 'wobbly-btn-primary' : 'wobbly-btn-danger') + '" onclick="toggleAdminStatus(\'' + admin.id + '\', ' + (admin.isDisabled ? 'true' : 'false') + ')">' + (admin.isDisabled ? 'Enable' : 'Disable') + '</button>' +
       '</div>' +
     '</div>';
   });
+
   container.innerHTML = html;
 }
 
@@ -190,8 +329,8 @@ async function handleCreateAdmin(e) {
     showToast("Please fill all fields.");
     return;
   }
-  if (pass.length < 6) {
-    showToast("Password must be at least 6 characters.");
+  if (!passwordRegex.test(pass)) {
+    showToast("Password needs 8+ chars with uppercase, lowercase, number, and symbol.");
     return;
   }
 
@@ -248,8 +387,14 @@ async function handleCreateAdmin(e) {
   loadAdmins();
 }
 
-function deleteAdmin(id) {
-  if (!confirm("Are you sure? This will permanently remove this admin.")) return;
+async function deleteAdmin(id) {
+  var confirmed = await showSaActionConfirm({
+    title: "Delete Admin",
+    message: "Are you sure? This will permanently remove this admin.",
+    confirmText: "Delete Admin",
+    danger: true,
+  });
+  if (!confirmed) return;
   console.log("deleteAdmin called", id);
 
   apiRequest("admins", "DELETE", null, id)
@@ -282,27 +427,68 @@ function deleteAdmin(id) {
 }
 
 function toggleAdminStatus(id, currentlyDisabled) {
-  // currentlyDisabled is passed directly from the button so we don't rely on localStorage
-  var action = currentlyDisabled ? "enable" : "disable";
-  var actionLabel = currentlyDisabled ? "Enable" : "Disable";
+  var admin = saAdminsCache.find(function(u) { return String(u.id) === String(id); });
+  var users = getStoredUsers();
+  var localUser = users.find(function(u) { return String(u.id) === String(id); });
+  var adminName = admin ? admin.fullName : (localUser ? localUser.fullName : "this admin");
+  var adminEmail = admin ? admin.email : (localUser ? localUser.email : "");
   var newDisabledState = !currentlyDisabled;
+  var actionLabel = currentlyDisabled ? "Enable" : "Disable";
 
-  // Get admin name for the confirmation message
+  pendingAdminStatusChange = {
+    id: id,
+    currentlyDisabled: currentlyDisabled,
+    newDisabledState: newDisabledState,
+    adminName: adminName,
+    adminEmail: adminEmail
+  };
+
+  showAdminStatusConfirm(actionLabel, adminName, adminEmail, currentlyDisabled);
+}
+
+function showAdminStatusConfirm(actionLabel, adminName, adminEmail, currentlyDisabled) {
+  var box = document.getElementById("sa-admin-status-confirm");
+  var title = document.getElementById("sa-admin-status-title");
+  var message = document.getElementById("sa-admin-status-message");
+  var confirmBtn = document.getElementById("sa-admin-status-confirm-btn");
+  if (!box || !title || !message || !confirmBtn) return;
+
+  title.textContent = actionLabel + " Admin Account";
+  message.innerHTML =
+    "<strong>" + escHtml(adminName) + "</strong>" +
+    (adminEmail ? "<br><small>" + escHtml(adminEmail) + "</small>" : "") +
+    "<br><span>" + (currentlyDisabled
+      ? "This admin will be able to log in again."
+      : "This admin will not be able to log in while disabled.") + "</span>";
+  confirmBtn.textContent = actionLabel + " Account";
+  confirmBtn.className = currentlyDisabled
+    ? "wobbly-btn wobbly-btn-primary"
+    : "wobbly-btn wobbly-btn-danger";
+  confirmBtn.disabled = false;
+  box.hidden = false;
+}
+
+function hideAdminStatusConfirm() {
+  var box = document.getElementById("sa-admin-status-confirm");
+  if (box) box.hidden = true;
+  pendingAdminStatusChange = null;
+}
+
+function confirmAdminStatusChange() {
+  if (!pendingAdminStatusChange) return;
+
+  var change = pendingAdminStatusChange;
+  var id = change.id;
+  var adminName = change.adminName;
+  var newDisabledState = change.newDisabledState;
+  var confirmBtn = document.getElementById("sa-admin-status-confirm-btn");
+  if (confirmBtn) {
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = newDisabledState ? "Disabling..." : "Enabling...";
+  }
+
   var users = getStoredUsers();
   var user = users.find(function(u) { return String(u.id) === String(id); });
-  var adminName = user ? user.fullName : "this admin";
-
-  // Confirmation dialog
-  var confirmed = confirm(
-    actionLabel + " account?\n\n" +
-    "Admin: " + adminName + "\n\n" +
-    (currentlyDisabled
-      ? "This will allow the admin to log in again."
-      : "This will prevent the admin from logging in.")
-  );
-  if (!confirmed) return;
-
-  var newRole = user.isDisabled ? (user._prevRole || "admin") : "viewer";
   var API_BASE = typeof getApiBase === "function" ? getApiBase() : "../backend/api.php";
 
   fetch(typeof apiUrl === "function" ? apiUrl("admins", id) : API_BASE + "?action=admins&id=" + encodeURIComponent(id), {
@@ -322,52 +508,30 @@ function toggleAdminStatus(id, currentlyDisabled) {
       addLog("admin",
         (newDisabledState ? "Disabled" : "Enabled") + " admin: " + adminName,
         "Admin Management");
+      hideAdminStatusConfirm();
       loadAdmins(); // Reload from DB to get fresh state
       showToast(newDisabledState
         ? adminName + " has been disabled."
         : adminName + " has been enabled.");
     } else {
       showToast("Failed: " + ((payload && payload.message) || "Server error"));
+      if (confirmBtn) {
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = newDisabledState ? "Disable Account" : "Enable Account";
+      }
     }
   })
   .catch(function() {
     showToast("Connection error. Could not update admin.");
+    if (confirmBtn) {
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = newDisabledState ? "Disable Account" : "Enable Account";
+    }
   });
 }
 
 function resetAdminPassword(id) {
-  var newPass = prompt("Enter new password for this admin (min 6 characters):");
-  if (newPass === null) return;
-  if (newPass.trim().length < 6) {
-    alert("Password must be at least 6 characters.");
-    return;
-  }
-
-  var API_BASE = typeof getApiBase === "function" ? getApiBase() : "../backend/api.php";
-  fetch(typeof apiUrl === "function" ? apiUrl("admins", id) : API_BASE + "?action=admins&id=" + encodeURIComponent(id), {
-    method: "PUT",
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ password: newPass.trim() })
-  })
-  .then(function(response) { return response.json(); })
-  .then(function(payload) {
-    if (payload && payload.success) {
-      var users = getStoredUsers();
-      var user = users.find(function(u) { return String(u.id) === String(id); });
-      if (user) {
-        user.password = newPass.trim();
-        storeUsers(users);
-      }
-      addLog("admin", "Reset password for: " + (user ? user.fullName : id), "Admin Management");
-      showToast("Password reset successfully.");
-    } else {
-      showToast("Failed to reset password: " + ((payload && payload.message) || "Server error"));
-    }
-  })
-  .catch(function() {
-    showToast("Connection error. Could not reset password.");
-  });
+  window.location.href = "super-admin-reset-password.html?id=" + encodeURIComponent(id);
 }
 
 /* ====================== 2. BACKUP & RESTORE ====================== */
@@ -407,11 +571,17 @@ function handleBackup() {
   showToast("Backup downloaded successfully!");
 }
 
-function handleRestore(e) {
+async function handleRestore(e) {
   var file = e.target.files[0];
   if (!file) return;
 
-  if (!confirm("WARNING: This will overwrite ALL current data with the backup. Continue?")) {
+  var confirmed = await showSaActionConfirm({
+    title: "Restore Backup",
+    message: "This will overwrite all current data with the selected backup.",
+    confirmText: "Restore Backup",
+    danger: true,
+  });
+  if (!confirmed) {
     e.target.value = "";
     return;
   }
@@ -432,7 +602,12 @@ function handleRestore(e) {
       showToast("System restored from backup!");
       setTimeout(function () { location.reload(); }, 1000);
     } catch (err) {
-      alert("Invalid backup file: " + err.message);
+      showSaActionConfirm({
+        title: "Invalid Backup File",
+        message: "Invalid backup file: " + err.message,
+        confirmText: "OK",
+        danger: false,
+      });
     }
   };
   reader.readAsText(file);
@@ -463,6 +638,8 @@ function loadBackupHistory() {
 /* ====================== 3. SYSTEM LOGS ====================== */
 
 var currentLogFilter = "all";
+var currentLogSort = "newest";
+var currentLogSearch = "";
 
 function addLog(category, action, details) {
   var user = getCurrentUser();
@@ -480,32 +657,31 @@ function addLog(category, action, details) {
 async function loadLogs() {
   var tbody = document.getElementById("logs-table-body");
   if (!tbody) return;
-  var result = await apiRequest("audit_log", "GET");
-  var logs = (result.ok && result.payload && Array.isArray(result.payload.audit_log))
-    ? result.payload.audit_log.map(function (log) {
-      return {
-        timestamp: log.timestamp,
-        user: log.admin_name || "System",
-        action: log.action || "",
-        category: String(log.action || "system").toLowerCase(),
-        details: log.description || "",
-      };
-    })
-    : [];
 
   tbody.innerHTML = "<tr><td colspan='5' style='padding:20px; text-align:center; opacity:0.5;'>Loading...</td></tr>";
 
-  fetch("../backend/api.php?action=audit_log", { credentials: "same-origin" })
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      var logs = (data && data.audit_log) ? data.audit_log : [];
+  Promise.all([
+    fetch("../backend/api.php?action=audit_log", { credentials: "same-origin", cache: "no-store" }).then(function(r) { return r.json(); }),
+    fetch("../backend/api.php?action=visitor_logs", { credentials: "same-origin", cache: "no-store" }).then(function(r) { return r.json(); }).catch(function () { return null; })
+  ])
+    .then(function(results) {
+      var auditData = results[0] || {};
+      var visitorData = results[1] || {};
+      var logs = normalizeAuditRows((auditData && auditData.audit_log) ? auditData.audit_log : [])
+        .concat(normalizeVisitorRows((visitorData && visitorData.visitor_logs) ? visitorData.visitor_logs : []));
 
       var filtered = logs;
       if (currentLogFilter !== "all") {
         filtered = logs.filter(function(log) {
-          return log.action && log.action.toLowerCase() === currentLogFilter;
+          return getLogFilterGroup(log.action) === currentLogFilter;
         });
       }
+      if (currentLogSearch) {
+        filtered = filtered.filter(function (log) {
+          return getLogSearchText(log).indexOf(currentLogSearch) !== -1;
+        });
+      }
+      filtered = sortLogRows(filtered);
 
       if (filtered.length === 0) {
         tbody.innerHTML = "<tr><td colspan='5' style='padding:20px; text-align:center; opacity:0.5;'>No logs found.</td></tr>";
@@ -515,14 +691,19 @@ async function loadLogs() {
       var html = "";
       filtered.forEach(function(log) {
         var ts = new Date(log.timestamp).toLocaleString();
-        var cat = (log.action || "").toLowerCase();
-        var catClass = cat === "login" ? "sa-badge-success" : (cat === "admin" ? "sa-badge-danger" : "");
+        var group = getLogFilterGroup(log.action);
+        var isPasswordReset = group === "password_reset";
+        var catLabel = getLogCategoryLabel(log.action);
+        var catClass = getLogBadgeClass(log.action);
+        var actionText = isPasswordReset ? "Password Reset" : getLogActionText(log.action, log.description);
+        var detailText = isPasswordReset ? (log.description || "") : getLogDetailsText(log.action, log.description);
+        var rowUser = log.admin_name || log.user || "";
         html += "<tr>" +
           "<td>" + ts + "</td>" +
-          "<td><strong>" + escHtml(log.admin_name || "System") + "</strong></td>" +
-          "<td>" + escHtml(log.description || "") + "</td>" +
-          "<td><span class='sa-badge " + catClass + "'>" + escHtml(cat) + "</span></td>" +
-          "<td></td>" +
+          "<td><strong>" + escHtml(rowUser) + "</strong></td>" +
+          "<td>" + escHtml(actionText) + "</td>" +
+          "<td><span class='sa-badge " + catClass + "'>" + escHtml(catLabel) + "</span></td>" +
+          "<td>" + escHtml(detailText) + "</td>" +
         "</tr>";
       });
       tbody.innerHTML = html;
@@ -531,6 +712,178 @@ async function loadLogs() {
       tbody.innerHTML = "<tr><td colspan='5' style='padding:20px; text-align:center; opacity:0.5;'>Failed to load logs.</td></tr>";
       console.warn("Failed to load audit log:", err);
     });
+}
+
+function normalizeAuditRows(logs) {
+  return (Array.isArray(logs) ? logs : []).filter(function (log) {
+    var action = String(log.action || "").toLowerCase();
+    var description = String(log.description || "").toLowerCase();
+    if (action === "archive_item") {
+      return false;
+    }
+    if (action === "visitor" || action.indexOf("visitor_") === 0) {
+      return false;
+    }
+    return !(description.indexOf("visitor logged") === 0);
+  });
+}
+
+function normalizeVisitorRows(logs) {
+  var rows = [];
+  (Array.isArray(logs) ? logs : []).forEach(function (log) {
+    var date = log.date || new Date().toISOString().slice(0, 10);
+    var name = log.name || "Visitor";
+    var destination = log.destination || "Map";
+    var purpose = log.purpose || "N/A";
+    var plateNo = log.plate_no || "N/A";
+    var timeIn = log.time_in || "00:00:00";
+    var timeOut = log.time_out || "null";
+    var baseDetails = "Visitor logged in: " + name +
+      " | Purpose: " + purpose +
+      " | Destination: " + destination +
+      " | Plate No: " + plateNo +
+      " | time_out: " + timeOut;
+
+    rows.push({
+      timestamp: date + " " + timeIn,
+      user: name,
+      admin_name: name,
+      action: "VISITOR_LOGIN",
+      description: baseDetails,
+    });
+
+    if (log.time_out) {
+      rows.push({
+        timestamp: date + " " + log.time_out,
+        user: name,
+        admin_name: name,
+        action: "VISITOR_LOGOUT",
+        description: "Visitor logged out: " + name +
+          " | Purpose: " + purpose +
+          " | Destination: " + destination +
+          " | Plate No: " + plateNo +
+          " | time_out: " + log.time_out,
+      });
+    }
+  });
+  return rows;
+}
+
+function sortLogs(sortMode) {
+  currentLogSort = sortMode || "newest";
+  loadLogs();
+}
+
+function searchLogs(query) {
+  currentLogSearch = String(query || "").trim().toLowerCase();
+  loadLogs();
+}
+
+function getLogSearchText(log) {
+  return [
+    log.timestamp || "",
+    log.admin_name || "",
+    log.user || "",
+    log.action || "",
+    getLogCategoryLabel(log.action),
+    getLogActionText(log.action, log.description),
+    log.description || ""
+  ].join(" ").toLowerCase();
+}
+
+function sortLogRows(logs) {
+  return logs.slice().sort(function (a, b) {
+    if (currentLogSort === "oldest") {
+      return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+    }
+    if (currentLogSort === "category") {
+      var catCompare = getLogCategoryLabel(a.action).localeCompare(getLogCategoryLabel(b.action));
+      if (catCompare !== 0) return catCompare;
+    }
+    return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+  });
+}
+
+function getLogFilterGroup(action) {
+  var cat = String(action || "").toLowerCase();
+  if (cat === "login" || cat === "logout") return "login";
+  if (cat === "map_edit" || cat === "archive") return "map";
+  if (cat === "pin_update") return "pin";
+  if (cat === "route_update") return "route";
+  if (cat === "password_reset") return "password_reset";
+  if (cat === "visitor" || cat.indexOf("visitor_") === 0) return "visitor";
+  if (cat === "create" || cat === "update" || cat === "delete" || cat === "admin") return "pin";
+  return cat;
+}
+
+function getLogCategoryLabel(action) {
+  var cat = String(action || "system").toLowerCase();
+  var labels = {
+    login: "login",
+    logout: "logout",
+    map_edit: "map edit",
+    pin_update: "pin update",
+    route_update: "route update",
+    password_reset: "password reset",
+    visitor: "visitor",
+    visitor_login: "visitor_login",
+    visitor_logout: "visitor_logout",
+    archive: "map edit",
+    create: "created",
+    update: "updated",
+    delete: "deleted",
+    admin: "admin"
+  };
+  return labels[cat] || cat;
+}
+
+function getLogBadgeClass(action) {
+  var cat = String(action || "").toLowerCase();
+  var classes = {
+    login: "sa-badge-login",
+    logout: "sa-badge-logout",
+    map_edit: "sa-badge-map",
+    archive: "sa-badge-map",
+    pin_update: "sa-badge-pin",
+    route_update: "sa-badge-route",
+    password_reset: "sa-badge-password",
+    visitor: "sa-badge-visitor",
+    visitor_login: "sa-badge-visitor",
+    visitor_logout: "sa-badge-visitor",
+    admin: "sa-badge-danger",
+    create: "sa-badge-success",
+    delete: "sa-badge-danger",
+    update: "sa-badge-map"
+  };
+  return classes[cat] || "";
+}
+
+function getLogActionText(action, description) {
+  var cat = String(action || "").toLowerCase();
+  var labels = {
+    login: "Login",
+    logout: "Logout",
+    map_edit: "Map Edit",
+    pin_update: "Pin/Legend Update",
+    route_update: "Route Update",
+    visitor: "Visitor Log",
+    visitor_login: "Visitor Login",
+    visitor_logout: "Visitor Logout",
+    archive: "Map Archive",
+    create: "Created",
+    update: "Updated",
+    delete: "Deleted",
+    admin: "Admin Action"
+  };
+  return labels[cat] || (description || "");
+}
+
+function getLogDetailsText(action, description) {
+  var cat = String(action || "").toLowerCase();
+  if (["login", "logout", "map_edit", "pin_update", "route_update", "visitor", "visitor_login", "visitor_logout", "archive", "create", "update", "delete", "admin"].indexOf(cat) !== -1) {
+    return description || "";
+  }
+  return "";
 }
 
 function filterLogs(filter) {
@@ -544,8 +897,14 @@ function filterLogs(filter) {
   loadLogs();
 }
 
-function clearLogs() {
-  if (!confirm("Delete all system logs?")) return;
+async function clearLogs() {
+  var confirmed = await showSaActionConfirm({
+    title: "Clear System Logs",
+    message: "Delete all system logs?",
+    confirmText: "Clear Logs",
+    danger: true,
+  });
+  if (!confirmed) return;
   fetch("../backend/api.php?action=audit_log", {
     method: "DELETE",
     credentials: "same-origin",
@@ -594,8 +953,7 @@ function loadArchives() {
 }
 
 function archiveCurrentVersion() {
-  var name = prompt("Give this archive a name:", "Map v" + (storageGet("schoolmap_archives", []).length + 1));
-  if (!name) return;
+  var name = "Map v" + (storageGet("schoolmap_archives", []).length + 1);
 
   var archives = storageGet("schoolmap_archives", []);
   archives.forEach(function (a) { a.isActive = false; });
@@ -618,8 +976,14 @@ function archiveCurrentVersion() {
   showToast("Current version archived!");
 }
 
-function restoreArchive(idx) {
-  if (!confirm("This will replace current map data with the archived version. Continue?")) return;
+async function restoreArchive(idx) {
+  var confirmed = await showSaActionConfirm({
+    title: "Restore Archive",
+    message: "This will replace current map data with the archived version.",
+    confirmText: "Restore Archive",
+    danger: true,
+  });
+  if (!confirmed) return;
   var archives = storageGet("schoolmap_archives", []);
   var arch = archives[idx];
   if (!arch) return;
@@ -642,13 +1006,192 @@ function setActiveArchive(idx) {
   showToast("Active version updated.");
 }
 
-function deleteArchive(idx) {
-  if (!confirm("Delete this archived version?")) return;
+async function deleteArchive(idx) {
+  var confirmed = await showSaActionConfirm({
+    title: "Delete Archive",
+    message: "Delete this archived version?",
+    confirmText: "Delete Archive",
+    danger: true,
+  });
+  if (!confirmed) return;
   var archives = storageGet("schoolmap_archives", []);
   archives.splice(idx, 1);
   storageSet("schoolmap_archives", archives);
   loadArchives();
   showToast("Archive deleted.");
+}
+
+function loadArchives() {
+  var container = document.getElementById("archive-list-container");
+  if (!container) return;
+  container.innerHTML = '<p style="text-align:center; opacity:0.55; padding:20px;">Loading archived items...</p>';
+  updateArchiveFilterButtons();
+
+  fetch("../backend/api.php?action=archive_items", {
+    credentials: "same-origin",
+    cache: "no-store",
+  })
+    .then(function(response) { return response.json(); })
+    .then(function(data) {
+      saArchiveItemsCache = (data && data.archive_items) ? data.archive_items : [];
+      renderArchiveItems();
+    })
+    .catch(function(err) {
+      console.warn("Failed to load archive items:", err);
+      container.innerHTML = '<p style="text-align:center; opacity:0.6; padding:20px;">Could not load archived map items.</p>';
+    });
+}
+
+function setArchiveFilter(filter) {
+  currentArchiveFilter = filter || "all";
+  updateArchiveFilterButtons();
+  renderArchiveItems();
+}
+
+function searchArchives(query) {
+  currentArchiveSearch = String(query || "").trim().toLowerCase();
+  renderArchiveItems();
+}
+
+function updateArchiveFilterButtons() {
+  document.querySelectorAll("[data-archive-filter]").forEach(function(button) {
+    button.classList.toggle("active", button.getAttribute("data-archive-filter") === currentArchiveFilter);
+  });
+}
+
+function renderArchiveItems() {
+  var container = document.getElementById("archive-list-container");
+  if (!container) return;
+
+  var items = saArchiveItemsCache.filter(function(item) {
+    if (currentArchiveFilter !== "all" && item.type !== currentArchiveFilter) {
+      return false;
+    }
+    if (!currentArchiveSearch) {
+      return true;
+    }
+    return getArchiveSearchText(item).indexOf(currentArchiveSearch) !== -1;
+  });
+
+  if (!items.length) {
+    container.innerHTML = '<p style="text-align:center; opacity:0.55; padding:20px;">No archived ' + escHtml(getArchiveTypeLabel(currentArchiveFilter).toLowerCase()) + ' found.</p>';
+    return;
+  }
+
+  container.innerHTML = items.map(function(item) {
+    var idx = saArchiveItemsCache.indexOf(item);
+    var restored = !!item.restored_at;
+    var dateValue = item.deleted_at ? String(item.deleted_at).replace(" ", "T") : "";
+    var date = dateValue ? new Date(dateValue).toLocaleString() : "Unknown date";
+    return '<div class="sa-archive-item' + (restored ? ' restored' : '') + '">' +
+      '<div class="sa-archive-main">' +
+        '<div class="sa-archive-title">' +
+          '<span class="sa-badge ' + getArchiveBadgeClass(item.type) + '">' + escHtml(getArchiveTypeLabel(item.type)) + '</span>' +
+          '<strong>' + escHtml(item.label || "Archived item") + '</strong>' +
+          (restored ? '<span class="sa-badge sa-badge-success">Restored</span>' : '') +
+        '</div>' +
+        '<div class="sa-archive-meta">Deleted: ' + escHtml(date) + ' | By: ' + escHtml(item.deleted_by || "Admin") + getArchiveDetail(item) + '</div>' +
+      '</div>' +
+      '<div class="sa-archive-actions">' +
+        (restored ? '<button class="wobbly-btn wobbly-btn-sm wobbly-btn-secondary" disabled>Recovered</button>' : '<button class="wobbly-btn wobbly-btn-sm wobbly-btn-primary" onclick="restoreArchiveItem(' + idx + ')">Recover</button>') +
+      '</div>' +
+    '</div>';
+  }).join("");
+}
+
+function getArchiveTypeLabel(type) {
+  var labels = {
+    all: "Items",
+    floor: "Floor",
+    pin: "Pin",
+    route_location: "Route Location",
+    route: "Route",
+    point: "Point",
+  };
+  return labels[type] || "Item";
+}
+
+function getArchiveBadgeClass(type) {
+  if (type === "floor") return "sa-badge-map";
+  if (type === "pin") return "sa-badge-pin";
+  if (type === "route" || type === "route_location") return "sa-badge-route";
+  if (type === "point") return "sa-badge-visitor";
+  return "sa-badge-map";
+}
+
+function getArchiveDetail(item) {
+  var data = item && item.data ? item.data : {};
+  if (item.type === "pin") {
+    return ' | Floor: ' + escHtml(data.floor_name || data.map_id || "Unknown");
+  }
+  if (item.type === "route" || item.type === "route_location") {
+    return ' | ' + escHtml((data.from_pin_name || data.from_pin_id || "Origin") + " to " + (data.to_pin_name || data.to_pin_id || "Destination"));
+  }
+  if (item.type === "point") {
+    return ' | Route ID: ' + escHtml(data.route_id || "Unknown") + ' | Order: ' + escHtml(data.point_order || "1");
+  }
+  return "";
+}
+
+function getArchiveSearchText(item) {
+  var data = item && item.data ? item.data : {};
+  return [
+    item.type,
+    getArchiveTypeLabel(item.type),
+    item.label,
+    item.deleted_by,
+    item.deleted_at,
+    data.name,
+    data.floor_name,
+    data.map_id,
+    data.from_pin_name,
+    data.to_pin_name,
+    data.from_pin_id,
+    data.to_pin_id,
+    data.route_id,
+    data.point_order,
+    data.direction,
+    data.description,
+    data.category_name,
+  ].join(" ").toLowerCase();
+}
+
+async function restoreArchiveItem(idx) {
+  var item = saArchiveItemsCache[idx];
+  if (!item || item.restored_at) return;
+  var confirmed = await showSaActionConfirm({
+    title: "Recover " + getArchiveTypeLabel(item.type),
+    message: "Recover " + (item.label || "this archived item") + " back to the map data?",
+    confirmText: "Recover",
+    danger: false,
+  });
+  if (!confirmed) return;
+
+  fetch("../backend/api.php?action=archive_items", {
+    method: "POST",
+    credentials: "same-origin",
+    cache: "no-store",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ audit_id: item.audit_id }),
+  })
+    .then(function(response) {
+      return response.json().then(function(payload) {
+        return { ok: response.ok, payload: payload };
+      });
+    })
+    .then(function(result) {
+      if (!result.ok || (result.payload && result.payload.error)) {
+        showToast((result.payload && result.payload.message) || "Could not recover archived item");
+        return;
+      }
+      showToast("Archived item recovered.");
+      loadArchives();
+      loadLogs();
+    })
+    .catch(function(err) {
+      console.warn("Failed to restore archive item:", err);
+      showToast("Could not recover archived item");
+    });
 }
 
 /* ====================== 5. REPORTS ====================== */
@@ -800,5 +1343,10 @@ function saveSettings() {
 }
 
 function resetSystem() {
-  alert("System reset is disabled now that data is stored in school_map_db2. Use database backups or admin delete tools instead.");
+  showSaActionConfirm({
+    title: "System Reset Disabled",
+    message: "System reset is disabled now that data is stored in school_map_db2. Use database backups or admin delete tools instead.",
+    confirmText: "OK",
+    danger: false,
+  });
 }

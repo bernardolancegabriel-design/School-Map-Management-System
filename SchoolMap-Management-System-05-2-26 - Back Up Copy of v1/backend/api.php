@@ -164,6 +164,66 @@ function sanitizeString(string $value)
     return htmlspecialchars(strip_tags(trim((string)$value)), ENT_QUOTES, 'UTF-8');
 }
 
+function recordAuditLog(PDO $pdo, string $action, string $description, ?int $userId = null)
+{
+    $stmt = $pdo->prepare("
+        INSERT INTO audit_log (user_id, action, description, timestamp)
+        VALUES (:user_id, :action, :description, NOW())
+    ");
+    $stmt->execute([
+        ':user_id' => $userId ?? ($_SESSION['user_id'] ?? 0),
+        ':action' => strtoupper($action),
+        ':description' => $description,
+    ]);
+}
+
+function archiveDeletedItem(PDO $pdo, string $type, string $label, array $data)
+{
+    $payload = [
+        'archive'    => true,
+        'type'       => $type,
+        'label'      => $label,
+        'data'       => $data,
+        'deleted_at' => date('Y-m-d H:i:s'),
+        'deleted_by' => $_SESSION['user_name'] ?? 'Admin',
+    ];
+
+    recordAuditLog($pdo, 'ARCHIVE_ITEM', json_encode($payload, JSON_UNESCAPED_UNICODE));
+}
+
+function routeArchiveData(PDO $pdo, int $routeId)
+{
+    $stmt = $pdo->prepare("
+        SELECT r.route_id AS id,
+               r.route_name AS name,
+               r.from_pin_id,
+               r.to_pin_id,
+               r.destination,
+               r.direction,
+               fp.name AS from_pin_name,
+               tp.name AS to_pin_name
+        FROM routes r
+        LEFT JOIN pins fp ON fp.pin_id = r.from_pin_id
+        LEFT JOIN pins tp ON tp.pin_id = r.to_pin_id
+        WHERE r.route_id = :id
+        LIMIT 1
+    ");
+    $stmt->execute([':id' => $routeId]);
+    $route = $stmt->fetch();
+    if (!$route) { return null; }
+
+    $pointStmt = $pdo->prepare("
+        SELECT id, route_id, point_order, x, y
+        FROM route_points
+        WHERE route_id = :id
+        ORDER BY point_order ASC
+    ");
+    $pointStmt->execute([':id' => $routeId]);
+    $route['points'] = $pointStmt->fetchAll();
+
+    return $route;
+}
+
 function saveBase64Image(string $base64Data)
 {
     if (empty($base64Data) || !preg_match('/^data:image\/(png|jpeg|jpg|gif|webp);base64,/i', $base64Data)) {
@@ -366,7 +426,7 @@ function dispatchRequest(PDO $pdo, string $action, string $action2, string $reso
             break;
  
         case 'logout':
-            handleLogout();
+            handleLogout($pdo);
             break;
  
         case 'me':
@@ -457,6 +517,12 @@ function dispatchRequest(PDO $pdo, string $action, string $action2, string $reso
             elseif ($method === 'DELETE') { requireAdmin(); handleDeleteAuditLog($pdo); }
             else { jsonError(405, 'Method Not Allowed'); }
             break;
+
+        case 'archive_items':
+            if ($method === 'GET')      { requireAdmin(); handleGetArchiveItems($pdo); }
+            elseif ($method === 'POST') { requireAdmin(); handleRestoreArchiveItem($pdo, $requestData); }
+            else { jsonError(405, 'Method Not Allowed'); }
+            break;
  
         /* -------------------------------------------------------
            HEALTH CHECK
@@ -535,6 +601,10 @@ function handleLogin(PDO $pdo, array $data)
     $_SESSION['user_id']   = $user['user_id'];
     $_SESSION['user_role'] = $user['role'];
     $_SESSION['user_name'] = $user['name'];
+
+    if (in_array($user['role'], ['admin', 'super_admin'], true)) {
+        recordAuditLog($pdo, 'LOGIN', 'Logged in: ' . $user['name'] . ' (' . $user['email'] . ')', (int)$user['user_id']);
+    }
  
     jsonSuccess('Login successful', [
         'id'       => $user['user_id'],
@@ -548,7 +618,7 @@ function handleLogin(PDO $pdo, array $data)
 function handleVerifyOtp(PDO $pdo, array $data)
 {   date_default_timezone_set('Asia/Manila'); //force timezone
 
-    require_once 'C:\xampp\htdocs\CAYABYAB\School-Map-Management-System\vendor\autoload.php';
+    require_once 'C:\xampp\htdocs\SCHOOL MAPS\REPO\School-Map-Management-System\vendor\autoload.php';
 
     $identifier = isset($data['identifier']) ? trim($data['identifier']) : '';
     $otp        = isset($data['otp'])        ? trim($data['otp'])        : '';
@@ -592,6 +662,8 @@ function handleVerifyOtp(PDO $pdo, array $data)
     $_SESSION['user_role'] = $user['role'];
     $_SESSION['user_name'] = $user['name'];
 
+    recordAuditLog($pdo, 'LOGIN', 'Logged in: ' . $user['name'] . ' (' . $user['email'] . ')', (int)$user['user_id']);
+
     jsonSuccess('Login successful', [
         'id'       => $user['user_id'],
         'fullName' => $user['name'],
@@ -602,8 +674,12 @@ function handleVerifyOtp(PDO $pdo, array $data)
 }    
 
  
-function handleLogout()
+function handleLogout(PDO $pdo)
 {
+    if (isset($_SESSION['user_id']) && in_array($_SESSION['user_role'] ?? '', ['admin', 'super_admin'], true)) {
+        recordAuditLog($pdo, 'LOGOUT', 'Logged out: ' . ($_SESSION['user_name'] ?? 'Admin'), (int)$_SESSION['user_id']);
+    }
+
     $_SESSION = [];
     if (ini_get('session.use_cookies')) {
         $params = session_get_cookie_params();
@@ -677,6 +753,9 @@ function handleCreateFloor(PDO $pdo, array $data)
     $stmt = $pdo->prepare("CALL sp_add_map(:name, :image_path)");
     $stmt->execute([':name' => $name, ':image_path' => $imagePath]);
     $result = $stmt->fetch();
+    $stmt->closeCursor();
+
+    recordAuditLog($pdo, 'MAP_EDIT', 'Created floor: ' . $name);
  
     jsonSuccess('Floor added successfully.', [
         'id'         => (int)($result['new_map_id'] ?? 0),
@@ -701,6 +780,9 @@ function handleUpdateFloor(PDO $pdo, string $id, array $data)
         ':name'       => $name ?: null,
         ':image_path' => $imagePath ?: null,
     ]);
+    $stmt->closeCursor();
+
+    recordAuditLog($pdo, 'MAP_EDIT', 'Updated floor ID: ' . (int)$id . ($name ? ' - ' . $name : ''));
  
     jsonSuccess('Floor updated successfully.', ['id' => (int)$id]);
 }
@@ -714,6 +796,9 @@ function handleToggleFloor(PDO $pdo, string $id)
     $stmt = $pdo->prepare("CALL sp_toggle_map_status(:id)");
     $stmt->execute([':id' => (int)$id]);
     $result = $stmt->fetch();
+    $stmt->closeCursor();
+
+    recordAuditLog($pdo, 'MAP_EDIT', 'Changed floor status ID: ' . (int)$id . ' to ' . ($result['new_status'] ?? 'unknown'));
  
     jsonSuccess($result['message'] ?? 'Status toggled.', [
         'id'        => (int)$id,
@@ -726,12 +811,113 @@ function handleDeleteFloor(PDO $pdo, string $id)
     setAdminSession($pdo);
  
     if (!$id) { jsonError(400, 'Floor ID is required.'); }
+    $floorId = (int)$id;
  
     try {
-        $stmt = $pdo->prepare("CALL sp_delete_map(:id)");
-        $stmt->execute([':id' => (int)$id]);
-        jsonSuccess('Floor deleted successfully.');
+        $floorStmt = $pdo->prepare("
+            SELECT map_id AS id, floor_name AS name, image_path, status
+            FROM maps
+            WHERE map_id = :id
+            LIMIT 1
+        ");
+        $floorStmt->execute([':id' => $floorId]);
+        $floor = $floorStmt->fetch();
+        if (!$floor) {
+            jsonError(404, 'Floor not found or already deleted.');
+        }
+
+        $pinStmt = $pdo->prepare("
+            SELECT p.pin_id AS id,
+                   p.map_id,
+                   p.name,
+                   p.description,
+                   p.category_id,
+                   p.image,
+                   p.x,
+                   p.y,
+                   lc.name AS category_name,
+                   m.floor_name
+            FROM pins p
+            LEFT JOIN legend_categories lc ON lc.category_id = p.category_id
+            LEFT JOIN maps m ON m.map_id = p.map_id
+            WHERE p.map_id = :id
+            ORDER BY p.pin_id ASC
+        ");
+        $pinStmt->execute([':id' => $floorId]);
+        $pins = $pinStmt->fetchAll();
+
+        $pinIds = array_map(function($pin) { return (int)$pin['id']; }, $pins);
+        $routeArchives = [];
+        if (!empty($pinIds)) {
+            $placeholders = implode(',', array_fill(0, count($pinIds), '?'));
+            $routeStmt = $pdo->prepare("
+                SELECT DISTINCT route_id
+                FROM routes
+                WHERE from_pin_id IN ($placeholders) OR to_pin_id IN ($placeholders)
+            ");
+            $routeStmt->execute(array_merge($pinIds, $pinIds));
+            $routeIds = array_map('intval', $routeStmt->fetchAll(PDO::FETCH_COLUMN));
+            foreach ($routeIds as $routeId) {
+                $routeData = routeArchiveData($pdo, $routeId);
+                if ($routeData) {
+                    $routeArchives[] = $routeData;
+                }
+            }
+        }
+
+        $pdo->beginTransaction();
+
+        archiveDeletedItem($pdo, 'floor', $floor['name'] ?: ('Floor #' . $floorId), $floor);
+        foreach ($pins as $pin) {
+            archiveDeletedItem($pdo, 'pin', $pin['name'] ?: ('Pin #' . $pin['id']), $pin);
+        }
+        foreach ($routeArchives as $routeData) {
+            $routeLabel = $routeData['name'] ?: ($routeData['direction'] ?: ('Route #' . $routeData['id']));
+            archiveDeletedItem($pdo, 'route', $routeLabel, $routeData);
+            archiveDeletedItem($pdo, 'route_location', 'Route location: ' . ($routeData['from_pin_name'] ?: $routeData['from_pin_id']) . ' to ' . ($routeData['to_pin_name'] ?: $routeData['to_pin_id']), [
+                'route_id'      => (int)$routeData['id'],
+                'from_pin_id'   => (int)$routeData['from_pin_id'],
+                'to_pin_id'     => (int)$routeData['to_pin_id'],
+                'from_pin_name' => $routeData['from_pin_name'] ?? '',
+                'to_pin_name'   => $routeData['to_pin_name'] ?? '',
+                'direction'     => $routeData['direction'] ?? '',
+            ]);
+            foreach (($routeData['points'] ?? []) as $point) {
+                archiveDeletedItem($pdo, 'point', 'Point #' . ($point['point_order'] ?? $point['id']) . ' for ' . $routeLabel, $point);
+            }
+        }
+
+        if (!empty($routeArchives)) {
+            $routeIds = array_map(function($route) { return (int)$route['id']; }, $routeArchives);
+            $placeholders = implode(',', array_fill(0, count($routeIds), '?'));
+            $deletePoints = $pdo->prepare("DELETE FROM route_points WHERE route_id IN ($placeholders)");
+            $deletePoints->execute($routeIds);
+
+            $deleteRoutes = $pdo->prepare("DELETE FROM routes WHERE route_id IN ($placeholders)");
+            $deleteRoutes->execute($routeIds);
+        }
+
+        if (!empty($pinIds)) {
+            $placeholders = implode(',', array_fill(0, count($pinIds), '?'));
+            $deletePins = $pdo->prepare("DELETE FROM pins WHERE pin_id IN ($placeholders)");
+            $deletePins->execute($pinIds);
+        }
+
+        $deleteFloor = $pdo->prepare("DELETE FROM maps WHERE map_id = :id");
+        $deleteFloor->execute([':id' => $floorId]);
+
+        $pdo->commit();
+
+        recordAuditLog($pdo, 'MAP_EDIT', 'Deleted floor ID: ' . $floorId . (!empty($pins) ? ' and archived ' . count($pins) . ' pin(s)' : ''));
+        jsonSuccess('Floor deleted successfully.', [
+            'id' => $floorId,
+            'archived_pins' => count($pins),
+            'archived_routes' => count($routeArchives),
+        ]);
     } catch (PDOException $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
         jsonError(400, 'Failed to delete floor: ' . $e->getMessage());
     }
 }
@@ -801,6 +987,7 @@ function handleCreatePin(PDO $pdo, array $data)
             ':y'           => $y,
         ]);
         $result = $stmt->fetch();
+        $stmt->closeCursor();
  
         $newPinId = (int)($result['new_pin_id'] ?? 0);
     } catch (PDOException $e) {
@@ -823,6 +1010,8 @@ function handleCreatePin(PDO $pdo, array $data)
             jsonError(400, 'Failed to create pin: ' . $inner->getMessage());
         }
     }
+
+    recordAuditLog($pdo, 'PIN_UPDATE', 'Created pin: ' . $name);
  
     jsonSuccess('Pin created successfully.', [
         'id'          => $newPinId,
@@ -861,6 +1050,7 @@ function handleUpdatePin(PDO $pdo, string $id, array $data)
             ':x'           => $x,
             ':y'           => $y,
         ]);
+        $stmt->closeCursor();
     } catch (PDOException $e) {
         try {
             $stmt = $pdo->prepare(
@@ -886,6 +1076,8 @@ function handleUpdatePin(PDO $pdo, string $id, array $data)
             jsonError(400, 'Failed to update pin: ' . $inner->getMessage());
         }
     }
+
+    recordAuditLog($pdo, 'PIN_UPDATE', 'Updated pin ID: ' . (int)$id . ($name ? ' - ' . $name : ''));
  
     jsonSuccess('Pin updated successfully.', [
         'id'          => (int)$id,
@@ -905,21 +1097,63 @@ function handleDeletePin(PDO $pdo, string $id)
     if ($pinId <= 0) { jsonError(400, 'Invalid Pin ID.'); }
  
     try {
-        $check = $pdo->prepare("SELECT COUNT(*) FROM pins WHERE pin_id = :id");
-        $check->execute([':id' => $pinId]);
-        if ((int)$check->fetchColumn() === 0) {
+        $pinStmt = $pdo->prepare("
+            SELECT p.pin_id AS id,
+                   p.map_id,
+                   p.name,
+                   p.description,
+                   p.category_id,
+                   p.image,
+                   p.x,
+                   p.y,
+                   lc.name AS category_name,
+                   m.floor_name
+            FROM pins p
+            LEFT JOIN legend_categories lc ON lc.category_id = p.category_id
+            LEFT JOIN maps m ON m.map_id = p.map_id
+            WHERE p.pin_id = :id
+            LIMIT 1
+        ");
+        $pinStmt->execute([':id' => $pinId]);
+        $pin = $pinStmt->fetch();
+        if (!$pin) {
             jsonError(404, 'Pin not found or already deleted.');
         }
 
-        $routeCountStmt = $pdo->prepare("
-            SELECT COUNT(*)
+        $routeStmt = $pdo->prepare("
+            SELECT route_id
             FROM routes
             WHERE from_pin_id = :from_id OR to_pin_id = :to_id
         ");
-        $routeCountStmt->execute([':from_id' => $pinId, ':to_id' => $pinId]);
-        $routeCount = (int)$routeCountStmt->fetchColumn();
+        $routeStmt->execute([':from_id' => $pinId, ':to_id' => $pinId]);
+        $routeIds = array_map('intval', $routeStmt->fetchAll(PDO::FETCH_COLUMN));
+        $routeArchives = [];
+        foreach ($routeIds as $routeId) {
+            $routeData = routeArchiveData($pdo, $routeId);
+            if ($routeData) {
+                $routeArchives[] = $routeData;
+            }
+        }
+        $routeCount = count($routeArchives);
 
         $pdo->beginTransaction();
+
+        archiveDeletedItem($pdo, 'pin', $pin['name'] ?: ('Pin #' . $pinId), $pin);
+        foreach ($routeArchives as $routeData) {
+            $routeLabel = $routeData['name'] ?: ($routeData['direction'] ?: ('Route #' . $routeData['id']));
+            archiveDeletedItem($pdo, 'route', $routeLabel, $routeData);
+            archiveDeletedItem($pdo, 'route_location', 'Route location: ' . ($routeData['from_pin_name'] ?: $routeData['from_pin_id']) . ' to ' . ($routeData['to_pin_name'] ?: $routeData['to_pin_id']), [
+                'route_id'      => (int)$routeData['id'],
+                'from_pin_id'   => (int)$routeData['from_pin_id'],
+                'to_pin_id'     => (int)$routeData['to_pin_id'],
+                'from_pin_name' => $routeData['from_pin_name'] ?? '',
+                'to_pin_name'   => $routeData['to_pin_name'] ?? '',
+                'direction'     => $routeData['direction'] ?? '',
+            ]);
+            foreach (($routeData['points'] ?? []) as $point) {
+                archiveDeletedItem($pdo, 'point', 'Point #' . ($point['point_order'] ?? $point['id']) . ' for ' . $routeLabel, $point);
+            }
+        }
 
         if ($routeCount > 0) {
             $deletePoints = $pdo->prepare("
@@ -941,6 +1175,8 @@ function handleDeletePin(PDO $pdo, string $id)
         $deletePin->execute([':id' => $pinId]);
 
         $pdo->commit();
+
+        recordAuditLog($pdo, 'PIN_UPDATE', 'Deleted pin ID: ' . $pinId . ($routeCount > 0 ? ' and removed ' . $routeCount . ' related route(s)' : ''));
 
         jsonSuccess('Pin deleted successfully.', [
             'id' => $pinId,
@@ -1079,6 +1315,8 @@ function handleCreateRoute(PDO $pdo, array $data)
         }
  
         $pdo->commit();
+
+        recordAuditLog($pdo, 'ROUTE_UPDATE', 'Created route: ' . $routeName);
  
         jsonSuccess('Route created successfully.', [
             'route' => [
@@ -1162,6 +1400,8 @@ function handleUpdateRoute(PDO $pdo, string $id, array $data)
         }
  
         $pdo->commit();
+
+        recordAuditLog($pdo, 'ROUTE_UPDATE', 'Updated route ID: ' . (int)$id . ' - ' . $routeName);
  
         jsonSuccess('Route updated successfully.', [
             'route' => [
@@ -1190,14 +1430,338 @@ function handleDeleteRoute(PDO $pdo, string $id)
     setAdminSession($pdo);
  
     if (!$id) { jsonError(400, 'Route ID is required.'); }
+    $routeId = (int)$id;
  
     try {
+        $routeData = routeArchiveData($pdo, $routeId);
+        if (!$routeData) {
+            jsonError(404, 'Route not found or already deleted.');
+        }
+
+        $routeLabel = $routeData['name'] ?: ($routeData['direction'] ?: ('Route #' . $routeId));
+
+        $pdo->beginTransaction();
+        archiveDeletedItem($pdo, 'route', $routeLabel, $routeData);
+        archiveDeletedItem($pdo, 'route_location', 'Route location: ' . ($routeData['from_pin_name'] ?: $routeData['from_pin_id']) . ' to ' . ($routeData['to_pin_name'] ?: $routeData['to_pin_id']), [
+            'route_id'      => $routeId,
+            'from_pin_id'   => (int)$routeData['from_pin_id'],
+            'to_pin_id'     => (int)$routeData['to_pin_id'],
+            'from_pin_name' => $routeData['from_pin_name'] ?? '',
+            'to_pin_name'   => $routeData['to_pin_name'] ?? '',
+            'direction'     => $routeData['direction'] ?? '',
+        ]);
+        foreach (($routeData['points'] ?? []) as $point) {
+            archiveDeletedItem($pdo, 'point', 'Point #' . ($point['point_order'] ?? $point['id']) . ' for ' . $routeLabel, $point);
+        }
+
         $stmt = $pdo->prepare("CALL sp_delete_route(:id)");
-        $stmt->execute([':id' => (int)$id]);
+        $stmt->execute([':id' => $routeId]);
+        $stmt->closeCursor();
+        $pdo->commit();
+
+        recordAuditLog($pdo, 'ROUTE_UPDATE', 'Deleted route ID: ' . $routeId);
         jsonSuccess('Route deleted successfully.');
     } catch (PDOException $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
         jsonError(400, 'Failed to delete route: ' . $e->getMessage());
     }
+}
+
+/* ============================================================
+   ARCHIVE ITEM HANDLERS
+   ============================================================ */
+
+function handleGetArchiveItems(PDO $pdo)
+{
+    $stmt = $pdo->query("
+        SELECT audit_id, user_id, description, timestamp
+        FROM audit_log
+        WHERE action = 'ARCHIVE_ITEM'
+        ORDER BY timestamp DESC, audit_id DESC
+    ");
+    $rows = $stmt->fetchAll();
+    $items = [];
+
+    foreach ($rows as $row) {
+        $payload = json_decode($row['description'] ?? '', true);
+        if (!is_array($payload) || empty($payload['archive'])) {
+            continue;
+        }
+
+        $items[] = [
+            'audit_id'    => (int)$row['audit_id'],
+            'user_id'     => (int)$row['user_id'],
+            'type'        => $payload['type'] ?? 'unknown',
+            'label'       => $payload['label'] ?? 'Archived item',
+            'data'        => $payload['data'] ?? [],
+            'deleted_at'  => $payload['deleted_at'] ?? $row['timestamp'],
+            'deleted_by'  => $payload['deleted_by'] ?? 'Admin',
+            'restored_at' => $payload['restored_at'] ?? null,
+            'restored_by' => $payload['restored_by'] ?? null,
+            'timestamp'   => $row['timestamp'],
+        ];
+    }
+
+    jsonResponse(['archive_items' => $items]);
+}
+
+function markArchiveItemRestored(PDO $pdo, int $auditId)
+{
+    $stmt = $pdo->prepare("SELECT description FROM audit_log WHERE audit_id = :id AND action = 'ARCHIVE_ITEM' LIMIT 1");
+    $stmt->execute([':id' => $auditId]);
+    $description = $stmt->fetchColumn();
+    $payload = json_decode((string)$description, true);
+    if (!is_array($payload)) { return; }
+
+    $payload['restored_at'] = date('Y-m-d H:i:s');
+    $payload['restored_by'] = $_SESSION['user_name'] ?? 'Super Admin';
+
+    $update = $pdo->prepare("UPDATE audit_log SET description = :description WHERE audit_id = :id");
+    $update->execute([
+        ':description' => json_encode($payload, JSON_UNESCAPED_UNICODE),
+        ':id'          => $auditId,
+    ]);
+}
+
+function handleRestoreArchiveItem(PDO $pdo, array $data)
+{
+    setAdminSession($pdo);
+
+    $auditId = isset($data['audit_id']) ? (int)$data['audit_id'] : 0;
+    if ($auditId <= 0) {
+        jsonError(400, 'Archive item ID is required.');
+    }
+
+    $stmt = $pdo->prepare("SELECT description FROM audit_log WHERE audit_id = :id AND action = 'ARCHIVE_ITEM' LIMIT 1");
+    $stmt->execute([':id' => $auditId]);
+    $description = $stmt->fetchColumn();
+    if (!$description) {
+        jsonError(404, 'Archive item not found.');
+    }
+
+    $payload = json_decode((string)$description, true);
+    if (!is_array($payload) || empty($payload['archive'])) {
+        jsonError(400, 'Archive item is invalid.');
+    }
+    if (!empty($payload['restored_at'])) {
+        jsonError(409, 'This archive item was already restored.');
+    }
+
+    $type = $payload['type'] ?? '';
+    $itemData = is_array($payload['data'] ?? null) ? $payload['data'] : [];
+
+    try {
+        $pdo->beginTransaction();
+
+        switch ($type) {
+            case 'floor':
+                restoreArchivedFloor($pdo, $itemData);
+                break;
+            case 'pin':
+                restoreArchivedPin($pdo, $itemData);
+                break;
+            case 'route':
+                restoreArchivedRoute($pdo, $itemData);
+                break;
+            case 'route_location':
+                restoreArchivedRouteLocation($pdo, $itemData);
+                break;
+            case 'point':
+                restoreArchivedPoint($pdo, $itemData);
+                break;
+            default:
+                jsonError(400, 'Unsupported archive type: ' . $type);
+        }
+
+        markArchiveItemRestored($pdo, $auditId);
+        recordAuditLog($pdo, 'ARCHIVE', 'Restored archived ' . str_replace('_', ' ', $type) . ': ' . ($payload['label'] ?? ('Archive #' . $auditId)));
+
+        $pdo->commit();
+        jsonSuccess('Archive item restored successfully.');
+    } catch (PDOException $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        jsonError(400, 'Failed to restore archive item: ' . $e->getMessage());
+    }
+}
+
+function restoreArchivedFloor(PDO $pdo, array $data)
+{
+    $id = (int)($data['id'] ?? $data['map_id'] ?? 0);
+    if ($id <= 0) { jsonError(400, 'Archived floor ID is missing.'); }
+
+    $exists = $pdo->prepare("SELECT COUNT(*) FROM maps WHERE map_id = :id");
+    $exists->execute([':id' => $id]);
+    if ((int)$exists->fetchColumn() > 0) {
+        jsonError(409, 'Floor already exists.');
+    }
+
+    $stmt = $pdo->prepare("
+        INSERT INTO maps (map_id, floor_name, image_path, status)
+        VALUES (:id, :name, :image_path, :status)
+    ");
+    $stmt->execute([
+        ':id'         => $id,
+        ':name'       => sanitizeString($data['name'] ?? $data['floor_name'] ?? ('Floor #' . $id)),
+        ':image_path' => sanitizeString($data['image_path'] ?? 'maps/default.png'),
+        ':status'     => sanitizeString($data['status'] ?? 'active'),
+    ]);
+}
+
+function restoreArchivedPin(PDO $pdo, array $data)
+{
+    $id = (int)($data['id'] ?? $data['pin_id'] ?? 0);
+    $mapId = (int)($data['map_id'] ?? 0);
+    if ($id <= 0 || $mapId <= 0) { jsonError(400, 'Archived pin data is incomplete.'); }
+
+    $exists = $pdo->prepare("SELECT COUNT(*) FROM pins WHERE pin_id = :id");
+    $exists->execute([':id' => $id]);
+    if ((int)$exists->fetchColumn() > 0) {
+        jsonError(409, 'Pin already exists.');
+    }
+
+    $mapExists = $pdo->prepare("SELECT COUNT(*) FROM maps WHERE map_id = :id");
+    $mapExists->execute([':id' => $mapId]);
+    if ((int)$mapExists->fetchColumn() === 0) {
+        jsonError(409, 'Restore the floor for this pin first.');
+    }
+
+    $stmt = $pdo->prepare("
+        INSERT INTO pins (pin_id, map_id, name, description, category_id, image, x, y)
+        VALUES (:id, :map_id, :name, :description, :category_id, :image, :x, :y)
+    ");
+    $stmt->execute([
+        ':id'          => $id,
+        ':map_id'      => $mapId,
+        ':name'        => sanitizeString($data['name'] ?? ('Pin #' . $id)),
+        ':description' => sanitizeString($data['description'] ?? ''),
+        ':category_id' => isset($data['category_id']) ? (int)$data['category_id'] : null,
+        ':image'       => $data['image'] ?? null,
+        ':x'           => isset($data['x']) ? (float)$data['x'] : 50.0,
+        ':y'           => isset($data['y']) ? (float)$data['y'] : 50.0,
+    ]);
+}
+
+function restoreArchivedRoute(PDO $pdo, array $data)
+{
+    $id = (int)($data['id'] ?? $data['route_id'] ?? 0);
+    $fromPinId = (int)($data['from_pin_id'] ?? 0);
+    $toPinId = (int)($data['to_pin_id'] ?? 0);
+    if ($id <= 0 || $fromPinId <= 0 || $toPinId <= 0) {
+        jsonError(400, 'Archived route data is incomplete.');
+    }
+
+    $exists = $pdo->prepare("SELECT COUNT(*) FROM routes WHERE route_id = :id");
+    $exists->execute([':id' => $id]);
+    if ((int)$exists->fetchColumn() > 0) {
+        jsonError(409, 'Route already exists.');
+    }
+
+    $pinCheck = $pdo->prepare("SELECT COUNT(*) FROM pins WHERE pin_id IN (:from_pin_id, :to_pin_id)");
+    $pinCheck->execute([':from_pin_id' => $fromPinId, ':to_pin_id' => $toPinId]);
+    if ((int)$pinCheck->fetchColumn() < 2) {
+        jsonError(409, 'Restore the route pins first.');
+    }
+
+    $stmt = $pdo->prepare("
+        INSERT INTO routes (route_id, route_name, from_pin_id, to_pin_id, destination, direction)
+        VALUES (:id, :route_name, :from_pin_id, :to_pin_id, :destination, :direction)
+    ");
+    $stmt->execute([
+        ':id'          => $id,
+        ':route_name'  => sanitizeString($data['name'] ?? $data['route_name'] ?? ('Route #' . $id)),
+        ':from_pin_id' => $fromPinId,
+        ':to_pin_id'   => $toPinId,
+        ':destination' => sanitizeString($data['destination'] ?? ''),
+        ':direction'   => sanitizeString($data['direction'] ?? ''),
+    ]);
+
+    if (!empty($data['points']) && is_array($data['points'])) {
+        foreach ($data['points'] as $point) {
+            restoreArchivedPoint($pdo, $point);
+        }
+    }
+}
+
+function restoreArchivedRouteLocation(PDO $pdo, array $data)
+{
+    $routeId = (int)($data['route_id'] ?? 0);
+    $fromPinId = (int)($data['from_pin_id'] ?? 0);
+    $toPinId = (int)($data['to_pin_id'] ?? 0);
+    if ($routeId <= 0 || $fromPinId <= 0 || $toPinId <= 0) {
+        jsonError(400, 'Archived route location data is incomplete.');
+    }
+
+    $exists = $pdo->prepare("SELECT COUNT(*) FROM routes WHERE route_id = :id");
+    $exists->execute([':id' => $routeId]);
+    if ((int)$exists->fetchColumn() === 0) {
+        jsonError(409, 'Restore the route first before restoring its location.');
+    }
+
+    $stmt = $pdo->prepare("
+        UPDATE routes
+        SET from_pin_id = :from_pin_id,
+            to_pin_id = :to_pin_id,
+            direction = IF(:direction_check = '', direction, :direction)
+        WHERE route_id = :route_id
+    ");
+    $stmt->execute([
+        ':route_id'    => $routeId,
+        ':from_pin_id' => $fromPinId,
+        ':to_pin_id'   => $toPinId,
+        ':direction_check' => sanitizeString($data['direction'] ?? ''),
+        ':direction'   => sanitizeString($data['direction'] ?? ''),
+    ]);
+}
+
+function restoreArchivedPoint(PDO $pdo, array $data)
+{
+    $id = (int)($data['id'] ?? 0);
+    $routeId = (int)($data['route_id'] ?? 0);
+    if ($routeId <= 0) { jsonError(400, 'Archived point route ID is missing.'); }
+
+    $routeExists = $pdo->prepare("SELECT COUNT(*) FROM routes WHERE route_id = :id");
+    $routeExists->execute([':id' => $routeId]);
+    if ((int)$routeExists->fetchColumn() === 0) {
+        jsonError(409, 'Restore the route for this point first.');
+    }
+
+    if ($id > 0) {
+        $exists = $pdo->prepare("SELECT COUNT(*) FROM route_points WHERE id = :id");
+        $exists->execute([':id' => $id]);
+        if ((int)$exists->fetchColumn() > 0) {
+            return;
+        }
+    }
+
+    if ($id > 0) {
+        $stmt = $pdo->prepare("
+            INSERT INTO route_points (id, route_id, point_order, x, y)
+            VALUES (:id, :route_id, :point_order, :x, :y)
+        ");
+        $stmt->execute([
+            ':id'          => $id,
+            ':route_id'    => $routeId,
+            ':point_order' => (int)($data['point_order'] ?? 1),
+            ':x'           => (float)($data['x'] ?? 0),
+            ':y'           => (float)($data['y'] ?? 0),
+        ]);
+        return;
+    }
+
+    $stmt = $pdo->prepare("
+        INSERT INTO route_points (route_id, point_order, x, y)
+        VALUES (:route_id, :point_order, :x, :y)
+    ");
+    $stmt->execute([
+        ':route_id'    => $routeId,
+        ':point_order' => (int)($data['point_order'] ?? 1),
+        ':x'           => (float)($data['x'] ?? 0),
+        ':y'           => (float)($data['y'] ?? 0),
+    ]);
 }
  
 /* ============================================================
@@ -1244,6 +1808,9 @@ function handleCreateLegend(PDO $pdo, array $data)
         ':icon'  => $icon ?: null,
     ]);
     $result = $stmt->fetch();
+    $stmt->closeCursor();
+
+    recordAuditLog($pdo, 'PIN_UPDATE', 'Created legend category: ' . $name);
  
     jsonSuccess('Legend category added successfully.', [
         'id'    => (int)($result['new_category_id'] ?? 0),
@@ -1274,6 +1841,9 @@ function handleUpdateLegend(PDO $pdo, string $id, array $data)
         ':color' => $color ?: null,
         ':icon'  => $icon  ?: null,
     ]);
+    $stmt->closeCursor();
+
+    recordAuditLog($pdo, 'PIN_UPDATE', 'Updated legend category ID: ' . (int)$id . ($name ? ' - ' . $name : ''));
  
     jsonSuccess('Legend updated successfully.', ['id' => (int)$id]);
 }
@@ -1287,6 +1857,8 @@ function handleDeleteLegend(PDO $pdo, string $id)
     try {
         $stmt = $pdo->prepare("CALL sp_delete_legend_category(:id)");
         $stmt->execute([':id' => (int)$id]);
+        $stmt->closeCursor();
+        recordAuditLog($pdo, 'PIN_UPDATE', 'Deleted legend category ID: ' . (int)$id);
         jsonSuccess('Legend deleted successfully.');
     } catch (PDOException $e) {
         jsonError(400, 'Failed to delete legend: ' . $e->getMessage());
@@ -1327,6 +1899,7 @@ function handleUpdateVisitorLogTimeOut(PDO $pdo, string $logId, array $data)
             "UPDATE visitor_logs SET time_out = :time_out WHERE log_id = :log_id"
         );
         $stmt->execute([':time_out' => $timeOut, ':log_id' => (int)$logId]);
+
         jsonSuccess('Visitor log updated with time_out.', ['log_id' => (int)$logId]);
     } catch (PDOException $e) {
         jsonError(400, 'Failed to update visitor log: ' . $e->getMessage());
@@ -1361,8 +1934,9 @@ function handleCreateVisitorLog(PDO $pdo, array $data)
             ':plate_no'    => $plateNo ?: null,
         ]);
  
+        $logId = (int)$pdo->lastInsertId();
         jsonSuccess('Visitor log added successfully.', [
-            'log_id' => (int)$pdo->lastInsertId(),
+            'log_id' => $logId,
         ]);
     } catch (PDOException $e) {
         jsonError(400, 'Failed to add visitor log: ' . $e->getMessage());
@@ -1404,7 +1978,9 @@ function handleCreateAdminAccount(PDO $pdo, array $data)
     if (!$name)     { jsonError(400, 'Name is required.'); }
     if (!$email)    { jsonError(400, 'Email is required.'); }
     if (!$password) { jsonError(400, 'Password is required.'); }
-    if (strlen($password) < 6) { jsonError(400, 'Password must be at least 6 characters.'); }
+    if (!preg_match('/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*]).{8,}$/', $password)) {
+        jsonError(400, 'Password needs 8+ chars with uppercase, lowercase, number, and symbol.');
+    }
 
     // Hash the password before storing
     $hashedPassword = password_hash($password, PASSWORD_BCRYPT);
@@ -1479,27 +2055,60 @@ function handleUpdateAdminAccount(PDO $pdo, string $id, array $data)
 
     // If password reset is requested
     if (!empty($data['password'])) {
+        if (!preg_match('/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*]).{8,}$/', $data['password'])) {
+            jsonError(400, 'Password needs 8+ chars with uppercase, lowercase, number, and symbol.');
+        }
+        $oldPassword = (string)($data['oldPassword'] ?? '');
+        if ($oldPassword === '') {
+            jsonError(400, 'Old password is required.');
+        }
+
+        $stmt = $pdo->prepare("SELECT name, email, password FROM admin WHERE user_id = :id LIMIT 1");
+        $stmt->execute([':id' => (int)$id]);
+        $targetAdmin = $stmt->fetch();
+        if (!$targetAdmin) {
+            jsonError(404, 'Admin account not found.');
+        }
+        $adminPassword = $targetAdmin['password'];
+
+        $oldPasswordValid = false;
+        if (substr((string)$adminPassword, 0, 4) === '$2y$') {
+            $oldPasswordValid = password_verify($oldPassword, (string)$adminPassword);
+        } else {
+            $oldPasswordValid = hash_equals((string)$adminPassword, $oldPassword);
+        }
+        if (!$oldPasswordValid) {
+            jsonError(401, 'Old password is incorrect.');
+        }
+
         $hashed = password_hash($data['password'], PASSWORD_BCRYPT);
         $stmt = $pdo->prepare("UPDATE admin SET password = :password WHERE user_id = :id");
         $stmt->execute([':password' => $hashed, ':id' => (int)$id]);
     }
 
-    jsonSuccess('Admin updated successfully.', ['id' => (int)$id]);
-
     // Audit log
     $description = 'Updated admin account ID: ' . $id;
     if ($name) $description .= ' - Name: ' . $name;
     if ($role) $description .= ' - Role: ' . $role;
-    if (!empty($data['password'])) $description .= ' - Password reset';
+    $auditAction = 'UPDATE';
+    if (!empty($data['password'])) {
+        $auditAction = 'PASSWORD_RESET';
+        $targetName = $targetAdmin['name'] ?? ('ID ' . $id);
+        $targetEmail = $targetAdmin['email'] ?? '';
+        $description = 'Reset password for admin account: ' . $targetName . ($targetEmail ? ' (' . $targetEmail . ')' : '');
+    }
 
     $stmt = $pdo->prepare("
         INSERT INTO audit_log (user_id, action, description, timestamp)
-        VALUES (:user_id, 'UPDATE', :description, NOW())
+        VALUES (:user_id, :action, :description, NOW())
     ");
     $stmt->execute([
         ':user_id' => $_SESSION['user_id'] ?? null,
+        ':action' => $auditAction,
         ':description' => $description,
     ]);
+
+    jsonSuccess('Admin updated successfully.', ['id' => (int)$id]);
 }
 
 function handleDeleteAdminAccount(PDO $pdo, string $id)

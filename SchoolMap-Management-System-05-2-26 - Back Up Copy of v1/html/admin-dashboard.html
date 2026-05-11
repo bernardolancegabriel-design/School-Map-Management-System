@@ -11,7 +11,7 @@
       href="https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=Patrick+Hand&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="../assets/css/admin.css?v=20260511-backbuttons" />
+    <link rel="stylesheet" href="../assets/css/admin.css?v=20260512-no-native-popups" />
   </head>
   <body>
     <div id="adminLoadingOverlay" class="admin-loading-overlay">
@@ -443,6 +443,12 @@
       if (el) { el.textContent = message; }
     }
 
+    function showAdminAccessMessage(message) {
+      updateAdminLoadingText(message);
+      var overlay = document.getElementById('adminLoadingOverlay');
+      if (overlay) { overlay.style.display = 'flex'; }
+    }
+
     function hideAdminLoadingOverlay() {
       var overlay = document.getElementById('adminLoadingOverlay');
       if (overlay) { overlay.style.display = 'none'; }
@@ -459,8 +465,8 @@
 
       var user = await getCachedCurrentUser();
       if (!isAdminUser(user)) {
-        alert('Admin access only. Please sign in with the administrator account.');
-        window.location.href = 'login.html';
+        showAdminAccessMessage('Admin access only. Please sign in with the administrator account.');
+        setTimeout(function () { window.location.href = 'login.html'; }, 1200);
         return false;
 
       }
@@ -500,10 +506,8 @@
         } else {
           var user = getCachedCurrentUser();
           if (!user || user.role !== "admin") {
-            alert(
-              "Admin access only. Please sign in with the administrator account.",
-            );
-            window.location.href = "login.html";
+            showAdminAccessMessage("Admin access only. Please sign in with the administrator account.");
+            setTimeout(function () { window.location.href = "login.html"; }, 1200);
             return false;
           }
         }
@@ -613,6 +617,6 @@
       });
     </script>
     <script src="../assets/js/core.js?v=20260511-logout-modal"></script>
-    <script src="../assets/js/admin-dashboard.js?v=20260511-backbuttons"></script>
+    <script src="../assets/js/admin-dashboard.js?v=20260512-route-scroll-panel-fix"></script>
   </body>
 </html>

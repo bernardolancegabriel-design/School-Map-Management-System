@@ -7,6 +7,11 @@
 
 const API_BASE =
   typeof getApiBase === "function" ? getApiBase() : "../backend/api.php";
+const MAP_GUEST_SESSION_KEY = "schoolmap_guest_user";
+const MAP_GUEST_FLOW_KEY = "schoolmap_guest_flow_active";
+let guestBackHistoryGuardActive = false;
+let activeGuestLogSavePromise = null;
+let pendingGuestTimeOut = "";
 
 document.addEventListener("DOMContentLoaded", function () {
   initMapPage();
@@ -35,6 +40,34 @@ async function apiGet(action) {
     console.warn("API load failed:", action, err);
     return null;
   }
+}
+
+function isGuestFlowActive() {
+  try {
+    return (
+      sessionStorage.getItem(MAP_GUEST_FLOW_KEY) === "true" ||
+      sessionStorage.getItem("guest_mode") === "true"
+    );
+  } catch (err) {
+    return false;
+  }
+}
+
+function getSavedGuestUser() {
+  try {
+    var savedGuest = sessionStorage.getItem(MAP_GUEST_SESSION_KEY);
+    if (!savedGuest) return null;
+    var guest = JSON.parse(savedGuest);
+    return guest && guest.isGuest ? guest : null;
+  } catch (err) {
+    sessionStorage.removeItem(MAP_GUEST_SESSION_KEY);
+    return null;
+  }
+}
+
+function applyGuestFlowUserOverride() {
+  if (!isGuestFlowActive()) return;
+  AppState.currentUser = getSavedGuestUser();
 }
 
 function normalizeDbImagePath(path) {
@@ -140,6 +173,7 @@ async function loadMapDataFromDatabase() {
   ]);
 
   AppState.currentUser = meRes?.user || null;
+  applyGuestFlowUserOverride();
   AppState.floors = Array.isArray(floorsRes?.floors)
     ? floorsRes.floors.map(normalizeDbFloor)
     : [];
@@ -168,7 +202,6 @@ async function initMapPage() {
   AppState.activeLegendFilter = null;
   AppState.currentFloor = AppState.floors[0]?.id || null;
 
-  renderUserArea();
   populateRouteSelects();
   renderFloorButtons();
   renderLegendItems();
@@ -238,6 +271,14 @@ function isAdminUser(user) {
   return role === "admin" || role === "super_admin";
 }
 
+function isSuperAdminUser(user) {
+  return (
+    String((user && user.role) || "")
+      .trim()
+      .toLowerCase() === "super_admin"
+  );
+}
+
 function renderUserArea() {
   var container = document.getElementById("map-user-area");
   if (!container) return;
@@ -245,7 +286,9 @@ function renderUserArea() {
   var user = AppState.currentUser;
 
   if (user) {
-    var displayName = escHtml(user.fullName || "Guest");
+    var displayName = isSuperAdminUser(user)
+      ? "Super Administrator"
+      : escHtml(user.fullName || "Guest");
     var isAdmin = isAdminUser(user);
 
     container.innerHTML = `
@@ -269,15 +312,36 @@ function renderUserArea() {
 /* ====================== PERSISTENCE ====================== */
 
 function loadCurrentUser() {
+  if (isGuestFlowActive()) {
+    AppState.currentUser = getSavedGuestUser();
+    return AppState.currentUser;
+  }
+
+  if (AppState.currentUser && !AppState.currentUser.isGuest) {
+    return AppState.currentUser;
+  }
+
+  var guest = getSavedGuestUser();
+  if (guest) {
+    AppState.currentUser = guest;
+    return guest;
+  }
+
   return AppState.currentUser;
 }
 
 function saveCurrentUser(user) {
   if (!user) return;
   AppState.currentUser = user;
+  if (user.isGuest) {
+    sessionStorage.setItem(MAP_GUEST_FLOW_KEY, "true");
+    sessionStorage.setItem(MAP_GUEST_SESSION_KEY, JSON.stringify(user));
+  }
 }
 
 function clearCurrentUser() {
+  sessionStorage.removeItem(MAP_GUEST_FLOW_KEY);
+  sessionStorage.removeItem(MAP_GUEST_SESSION_KEY);
   AppState.currentUser = null;
 }
 
@@ -294,7 +358,7 @@ function saveGuestLog(guest) {
     plate_no: document.getElementById("guest-plate").value.trim() || null,
   };
 
-  fetch(
+  activeGuestLogSavePromise = fetch(
     typeof apiUrl === "function"
       ? apiUrl("visitor_logs")
       : API_BASE + "?action=visitor_logs",
@@ -303,11 +367,49 @@ function saveGuestLog(guest) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     },
-  ).catch((err) => console.warn("Failed to save visitor log to DB:", err));
+  )
+    .then(function (response) { return response.json(); })
+    .then(function (payload) {
+      const logId = payload && payload.data && payload.data.log_id;
+      if (logId) {
+        guest.logId = logId;
+        guest.visitorLogId = logId;
+        saveCurrentUser(guest);
+      }
+      return payload;
+    })
+    .catch((err) => console.warn("Failed to save visitor log to DB:", err))
+    .finally(function () {
+      activeGuestLogSavePromise = null;
+    });
+  return activeGuestLogSavePromise;
 }
 
-function saveGuestTimeOut(guest) {
-  return guest;
+function saveGuestTimeOut(guest, timeOut) {
+  const logId = guest && (guest.logId || guest.visitorLogId);
+  if (!logId && activeGuestLogSavePromise) {
+    return activeGuestLogSavePromise.then(function () {
+      return saveGuestTimeOut(AppState.currentUser || guest, timeOut);
+    });
+  }
+  if (!logId) return Promise.resolve(guest);
+
+  const savedTimeOut = timeOut || new Date().toTimeString().split(" ")[0];
+  guest.time_out = savedTimeOut;
+  saveCurrentUser(guest);
+
+  return fetch(
+    typeof apiUrl === "function"
+      ? apiUrl("visitor_logs", logId)
+      : API_BASE + "?action=visitor_logs&id=" + encodeURIComponent(logId),
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        time_out: savedTimeOut,
+      }),
+    },
+  ).catch((err) => console.warn("Failed to save visitor time-out to DB:", err));
 }
 
 /* ====================== GUEST FLOW ====================== */
@@ -354,13 +456,19 @@ function toggleUserMenu(button) {
 
   const user = AppState.currentUser;
   document.getElementById("user-dropdown-name").textContent =
-    user.fullName || "Guest";
+    isSuperAdminUser(user) ? "Super Administrator" : user.fullName || "Guest";
   document.getElementById("user-dropdown-role").textContent = user.isGuest
     ? user.category || "Guest"
-    : user.role || "User";
+    : isSuperAdminUser(user)
+      ? "Super Admin"
+      : user.role || "User";
 
   var adminItem = document.getElementById("user-dropdown-admin");
   if (adminItem) adminItem.style.display = isAdminUser(user) ? "" : "none";
+  var superAdminItem = document.getElementById("user-dropdown-super-admin");
+  if (superAdminItem) {
+    superAdminItem.style.display = isSuperAdminUser(user) ? "" : "none";
+  }
 
   if (button) {
     var rect = button.getBoundingClientRect();
@@ -419,6 +527,11 @@ function closeAdminVerifyModal() {
 function proceedToAdminPanel() {
   closeAdminVerifyModal();
   window.location.href = "admin-dashboard.html";
+}
+
+function goToSuperAdminDashboard() {
+  closeUserMenu();
+  window.location.href = "super-admin-dashboard.html";
 }
 
 /* ===== FLOORS ===== */
@@ -1740,13 +1853,44 @@ function applyZoom() {
 function showEntryBanner() {
   var banner = document.getElementById("map-entry-banner");
   if (!banner) {
-    return;
+    return Promise.resolve();
   }
   banner.classList.add("show");
   clearTimeout(showEntryBanner._hideTimer);
-  showEntryBanner._hideTimer = setTimeout(function () {
-    banner.classList.remove("show");
-  }, 2600);
+  return new Promise(function (resolve) {
+    showEntryBanner._hideTimer = setTimeout(function () {
+      banner.classList.remove("show");
+      setTimeout(resolve, 260);
+    }, 2600);
+  });
+}
+
+function showExitBanner(name) {
+  var banner = document.getElementById("map-exit-banner");
+  if (!banner) {
+    return Promise.resolve();
+  }
+  var text = document.getElementById("map-exit-text");
+  var dots = document.getElementById("map-exit-dots");
+  if (text) {
+    text.textContent = "Exiting the map...";
+  }
+  if (dots) {
+    dots.style.display = "";
+  }
+  banner.classList.add("show");
+  clearTimeout(showExitBanner._hideTimer);
+  return new Promise(function (resolve) {
+    showExitBanner._hideTimer = setTimeout(function () {
+      if (text) {
+        text.textContent = "Thank you for visiting the map, " + name;
+      }
+      if (dots) {
+        dots.style.display = "none";
+      }
+      setTimeout(resolve, 1900);
+    }, 1600);
+  });
 }
 
 function showEntryBannerIfRequested() {
@@ -1761,6 +1905,9 @@ function showEntryBannerIfRequested() {
   }
 
   if (shouldShow) {
+    if (isGuestFlowActive() && !AppState.currentUser) {
+      return;
+    }
     requestAnimationFrame(showEntryBanner);
   }
 }
@@ -1792,24 +1939,28 @@ function toggleMapSidebar() {
   sidebar.classList.toggle("open", AppState.sidebarOpen);
 }
 function initGuestFlow() {
-  loadCurrentUser();
-
   const isGuestMode = sessionStorage.getItem("guest_mode") === "true";
-
   if (isGuestMode) {
     sessionStorage.removeItem("guest_mode");
-
-    if (!AppState.currentUser || !AppState.currentUser.isGuest) {
-      showGuestLogbookModal(); // Entry mode only
-    } else {
-      renderUserArea();
-    }
-  } else if (AppState.currentUser && AppState.currentUser.isGuest) {
-    // If user is guest, show modal on refresh to persist state - added to make modal stay on refresh
-    showGuestLogbookModal();
-  } else {
-    renderUserArea();
+    sessionStorage.setItem(MAP_GUEST_FLOW_KEY, "true");
   }
+
+  const user = loadCurrentUser();
+
+  if (isGuestFlowActive() && !user) {
+    renderUserArea();
+    showGuestLogbookModal();
+    return;
+  }
+
+  if (user) {
+    renderUserArea();
+    if (user.isGuest) setupGuestBackHistoryGuard();
+    return;
+  }
+
+  renderUserArea();
+  showGuestLogbookModal();
 }
 
 function showGuestLogbookModal() {
@@ -1873,8 +2024,9 @@ function handleGuestSubmit(e) {
   const name = document.getElementById("guest-name").value.trim();
   const category = document.getElementById("guest-category").value;
   const purpose = document.getElementById("guest-purpose").value.trim();
+  const destination = document.getElementById("guest-destination").value.trim();
 
-  if (!name || !category) {
+  if (!name || !category || !purpose || !destination) {
     showToast("Please fill in all required fields.");
     return;
   }
@@ -1895,19 +2047,22 @@ function handleGuestSubmit(e) {
       isGuest: true,
       category: category,
       purpose: purpose,
+      destination: destination,
       time_in: new Date().toISOString(),
       loggedInAt: new Date().toISOString(),
     };
 
     saveCurrentUser(guestUser);
     saveGuestLog(guestUser);
+    setupGuestBackHistoryGuard();
 
     renderUserArea();
 
     document.getElementById("guest-logbook-modal").classList.remove("active");
-    showToast(`Welcome, ${name}!`);
-    showEntryBanner();
-  }, 1000); // 1-second delay
+    showEntryBanner().then(function () {
+      showToast(`Welcome, ${name}!`);
+    });
+  }, 500); // 1-second delay
 }
 
 /* ===== GUEST LOGOUT CONFIRMATION ===== */
@@ -1941,29 +2096,57 @@ function showGuestLogoutConfirmation() {
 
   if (!modal || !infoEl) return;
 
+  pendingGuestTimeOut = new Date().toTimeString().split(" ")[0];
+
   infoEl.innerHTML = `
     <strong>Name:</strong> ${escHtml(user.fullName)}<br>
     <strong>Category:</strong> ${escHtml(user.category)}<br>
-    <strong>Purpose:</strong> ${escHtml(user.purpose)}
+    <strong>Purpose:</strong> ${escHtml(user.purpose)}<br>
+    <strong>Logout Timestamp:</strong> ${escHtml(pendingGuestTimeOut)}
   `;
 
   modal.style.display = "flex";
 }
 
+function setupGuestBackHistoryGuard() {
+  if (guestBackHistoryGuardActive) return;
+  if (!AppState.currentUser || !AppState.currentUser.isGuest) return;
+
+  guestBackHistoryGuardActive = true;
+  history.pushState({ schoolMapGuestGuard: true }, "", window.location.href);
+  window.addEventListener("popstate", handleGuestBackHistory);
+}
+
+function handleGuestBackHistory() {
+  if (!AppState.currentUser || !AppState.currentUser.isGuest) {
+    guestBackHistoryGuardActive = false;
+    window.removeEventListener("popstate", handleGuestBackHistory);
+    return;
+  }
+
+  history.pushState({ schoolMapGuestGuard: true }, "", window.location.href);
+  showGuestLogoutConfirmation();
+}
+
 function cancelGuestLogout() {
   const modal = document.getElementById("guest-logout-modal");
   if (modal) modal.style.display = "none";
+  pendingGuestTimeOut = "";
 }
 
 function confirmGuestLogout() {
   const user = AppState.currentUser;
-  if (user && user.isGuest) {
-    saveGuestTimeOut(user);
-  }
+  const name = user && user.fullName ? user.fullName : "guest";
 
-  clearCurrentUser();
   cancelGuestLogout();
+  guestBackHistoryGuardActive = false;
+  window.removeEventListener("popstate", handleGuestBackHistory);
 
-  showToast("You have logged out. Thank you for visiting!");
-  window.location.href = "index.html";
+  const timeoutSave = user && user.isGuest ? saveGuestTimeOut(user, pendingGuestTimeOut) : Promise.resolve();
+  Promise.resolve(timeoutSave).finally(function () {
+    return showExitBanner(name);
+  }).then(function () {
+    clearCurrentUser();
+    window.location.href = "index.html";
+  });
 }

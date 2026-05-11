@@ -204,11 +204,11 @@ function ensureLogoutModal() {
   modal.style.cssText = "display:none;position:fixed;inset:0;z-index:9999;align-items:center;justify-content:center;padding:20px;background:rgba(25,42,87,.42);";
   modal.innerHTML =
     '<div class="confirm-card" style="width:min(420px,100%);padding:24px;background:#fff;border:3px solid #2d2d2d;border-radius:18px;box-shadow:8px 8px 0 #2d2d2d;text-align:center;">' +
-      '<h2 style="margin:0 0 8px;font-size:26px;color:#192A57;">Confirm logout</h2>' +
+      '<h2 style="margin:0 0 8px;font-size:26px;color:#192A57;">Confirm Logout</h2>' +
       '<p style="margin:0 0 20px;font-size:17px;color:rgba(45,45,45,.78);">Are you sure you want to sign out?</p>' +
       '<div class="confirm-actions" style="display:flex;justify-content:center;gap:12px;flex-wrap:wrap;">' +
         '<button class="wobbly-btn wobbly-btn-secondary btn btn-ghost" type="button" onclick="hideLogoutModal()">Cancel</button>' +
-        '<button class="wobbly-btn wobbly-btn-danger btn btn-danger" type="button" onclick="confirmLogout()">Logout</button>' +
+        '<button class="wobbly-btn wobbly-btn-danger btn btn-danger" type="button" onclick="confirmLogout()">Log out</button>' +
       '</div>' +
     '</div>';
   document.body.appendChild(modal);
@@ -235,11 +235,15 @@ function confirmLogout() {
 }
 
 function performLogout() {
-  fetch(typeof apiUrl === "function" ? apiUrl("logout") : "../backend/api.php?action=logout", { credentials: "same-origin" }).catch(function () {});
-  AppState.currentUser = null;
-  setCurrentUser(null);
-  showToast("You have been signed out.");
-  navigate("login");
+  fetch(typeof apiUrl === "function" ? apiUrl("logout") : "../backend/api.php?action=logout", { credentials: "same-origin" })
+    .finally(function () {
+      AppState.currentUser = null;
+      setCurrentUser(null);
+      showToast("You have been signed out.");
+      setTimeout(function () {
+        navigate("index");
+      }, 250);
+    });
 }
 
 function requireAdminPage() {
@@ -280,6 +284,7 @@ function showToast(message) {
     clearTimeout(toastHideTimer);
   }
 
+  toast.classList.add("toast-normal");
   toast.classList.remove("show");
   toast.style.display = "none";
   void toast.offsetWidth;

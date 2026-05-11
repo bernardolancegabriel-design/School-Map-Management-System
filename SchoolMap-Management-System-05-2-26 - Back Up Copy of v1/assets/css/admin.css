@@ -1568,3 +1568,40 @@ Used in: admin-dashboard.html
   }
 }
 
+.app-action-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(25, 42, 87, 0.42);
+}
+
+.app-action-confirm-overlay[hidden] {
+  display: none;
+}
+
+.app-action-confirm-card {
+  width: min(430px, 100%);
+  padding: 18px;
+  border: 2.5px solid var(--fg);
+  border-radius: 12px 4px 10px 4px / 4px 10px 4px 12px;
+  background: var(--post-it);
+  box-shadow: 5px 5px 0 var(--fg);
+  text-align: center;
+}
+
+.app-action-confirm-card p {
+  margin: 8px 0 16px;
+  font-size: 17px;
+  line-height: 1.35;
+}
+
+.app-action-confirm-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}

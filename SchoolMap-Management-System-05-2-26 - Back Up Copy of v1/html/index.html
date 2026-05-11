@@ -598,6 +598,8 @@
       /* Add this inside the <script> tag at the bottom of index.html */
       function handleGuestExplore() {
         // Set a flag so map.html knows to show the LogBook
+        sessionStorage.removeItem("schoolmap_guest_user");
+        sessionStorage.setItem("schoolmap_guest_flow_active", "true");
         sessionStorage.setItem("guest_mode", "true");
         window.location.href = "map.html";
       }

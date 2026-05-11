@@ -77,6 +77,115 @@
   });
   const ICON_NAMES = Object.keys(ICONS);
 
+  function showAdminActionConfirm(options) {
+    const config = {
+      title: "Confirm Action",
+      message: "Are you sure?",
+      confirmText: "Confirm",
+      danger: true,
+      ...options,
+    };
+
+    let overlay = document.getElementById("admin-action-confirm");
+    if (!overlay) {
+      overlay = document.createElement("div");
+      overlay.id = "admin-action-confirm";
+      overlay.className = "app-action-confirm-overlay";
+      overlay.hidden = true;
+      overlay.innerHTML = `
+        <div class="app-action-confirm-card">
+          <h3 class="card-heading" data-confirm-title></h3>
+          <p data-confirm-message></p>
+          <div class="app-action-confirm-actions">
+            <button type="button" class="btn btn-secondary" data-confirm-cancel>Cancel</button>
+            <button type="button" class="btn" data-confirm-ok>Confirm</button>
+          </div>
+        </div>`;
+      document.body.appendChild(overlay);
+    }
+
+    overlay.querySelector("[data-confirm-title]").textContent = config.title;
+    overlay.querySelector("[data-confirm-message]").textContent = config.message;
+    const okBtn = overlay.querySelector("[data-confirm-ok]");
+    const cancelBtn = overlay.querySelector("[data-confirm-cancel]");
+    okBtn.textContent = config.confirmText;
+    okBtn.className = "btn " + (config.danger ? "btn-danger" : "btn-primary");
+    overlay.hidden = false;
+
+    return new Promise((resolve) => {
+      const close = (value) => {
+        overlay.hidden = true;
+        okBtn.removeEventListener("click", onOk);
+        cancelBtn.removeEventListener("click", onCancel);
+        overlay.removeEventListener("click", onBackdrop);
+        document.removeEventListener("keydown", onKeydown);
+        resolve(value);
+      };
+      const onOk = () => close(true);
+      const onCancel = () => close(false);
+      const onBackdrop = (event) => {
+        if (event.target === overlay) close(false);
+      };
+      const onKeydown = (event) => {
+        if (event.key === "Escape") close(false);
+      };
+      okBtn.addEventListener("click", onOk);
+      cancelBtn.addEventListener("click", onCancel);
+      overlay.addEventListener("click", onBackdrop);
+      document.addEventListener("keydown", onKeydown);
+    });
+  }
+
+  function scrollToRouteEditor() {
+    setTimeout(() => {
+      const panel = document.querySelector(".route-editor-section");
+      const cpBody = document.getElementById("cpBody");
+      if (panel) {
+        if (cpBody) {
+          cpBody.scrollTo({
+            top: panel.offsetTop - cpBody.offsetTop,
+            behavior: "smooth",
+          });
+        } else {
+          panel.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      }
+      const routeName = document.getElementById("routeName");
+      if (routeName) {
+        routeName.focus({ preventScroll: true });
+      }
+    }, 80);
+  }
+
+  function setRouteDraft(draft) {
+    state.routeEditor.draft = draft;
+    state.routeEditor.cancelSnapshot = JSON.stringify(draft || null);
+  }
+
+  function hasRouteDraftChanges() {
+    if (!state.routeEditor.draft) return false;
+    return JSON.stringify(state.routeEditor.draft) !== state.routeEditor.cancelSnapshot;
+  }
+
+  async function closeRouteEditorWithConfirm() {
+    if (hasRouteDraftChanges()) {
+      const confirmed = await showAdminActionConfirm({
+        title: "Cancel Route Editing",
+        message: "Cancel route editing? Unsaved route changes and new points will be discarded.",
+        confirmText: "Cancel Editing",
+        danger: true,
+      });
+      if (!confirmed) return;
+    }
+    stopRoutePreview();
+    state.routeEditor.draft = null;
+    state.routeEditor.cancelSnapshot = null;
+    state.routeEditor.selectedPointIndex = null;
+    state.routeEditor.pickTarget = null;
+    state.routeEditor.originLocked = false;
+    renderAll();
+  }
+
   const ICONS_SM = {
     plus: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>',
     pencil:
@@ -166,6 +275,7 @@
     edit:          null, // { kind: "floor"|"pin"|"legend", isNew, draft }
     routeEditor: {
       draft: null,
+      cancelSnapshot: null,
       selectedPointIndex: null,
       mode: "segment",
       pickTarget: null,
@@ -654,8 +764,14 @@
 
     setupAdminBackGuard();
 
-    bind("#resetBtn", "click", () => {
-      if (!confirm("Reset all data to defaults?")) return;
+    bind("#resetBtn", "click", async () => {
+      const confirmed = await showAdminActionConfirm({
+        title: "Reset Map Data",
+        message: "Reset all data on this screen to defaults?",
+        confirmText: "Reset",
+        danger: true,
+      });
+      if (!confirmed) return;
       state.floors = JSON.parse(JSON.stringify(DEFAULTS.floors));
       state.locations = JSON.parse(JSON.stringify(DEFAULTS.locations));
       state.legends = JSON.parse(JSON.stringify(DEFAULTS.legends));
@@ -1111,7 +1227,7 @@
           </div>
           <div class="row-actions">
             <button class="btn btn-secondary small" data-add-route="${loc.id}">${ICONS_SM.plus} Add Route</button>
-            <button class="btn btn-danger small" data-archive-origin="${loc.id}">Archive</button>
+            <button class="icon-btn danger" data-archive-origin="${loc.id}" title="Archive route location">${ICONS_SM.trash}</button>
           </div>
         </div>
       `;
@@ -1151,8 +1267,8 @@
             <div class="row-sub">${escapeHtml(dest?.name || route.destination || "No destination")} · ${route.points?.length || 0} point(s)</div>
           </div>
           <div class="row-actions">
-            <button class="icon-btn" data-edit-route="${route.id}">${ICONS_SM.pencil}</button>
-            <button class="icon-btn ${route.archived ? "btn-secondary" : "danger"}" data-archive-route="${route.id}">${route.archived ? "Restore" : "Archive"}</button>
+            <button class="icon-btn" data-edit-route="${route.id}" title="Edit route">${ICONS_SM.pencil}</button>
+            <button class="icon-btn ${route.archived ? "btn-secondary" : "danger"}" data-archive-route="${route.id}" title="${route.archived ? "Restore route" : "Archive route"}">${route.archived ? "Restore" : ICONS_SM.trash}</button>
           </div>
         </div>
       `;
@@ -1166,7 +1282,7 @@
     return `
       <div class="section">
         <div class="section-head">
-          <h2>Locations <span class="count">${state.locations.length}</span></h2>
+          <h2>Routes From <span class="count">${state.locations.length}</span></h2>
         </div>
         <div class="search">${ICONS_SM.search}<input type="text" id="routeLocationSearch" placeholder="Search locations..." value="${escapeHtml(state.routeLocationSearch)}"/></div>
         <div class="list scroll">${pinRows || `<p class="hint">No locations found.</p>`}</div>
@@ -1217,7 +1333,6 @@
       <div class="row ${state.routeEditor.selectedPointIndex === idx ? "selected" : ""}" data-point-index="${idx}">
         <span class="row-name">Point ${idx + 1}</span>
         <div class="row-sub">${point.x.toFixed(1)}% · ${point.y.toFixed(1)}% · F${point.floor}</div>
-        <button class="icon-btn" data-select-route-point="${idx}" title="Select point">${ICONS_SM.move}</button>
       </div>
     `,
       )
@@ -1245,7 +1360,6 @@
                 <label>Start Location</label>
                 <div class="field-row">
                   <select id="routeOrigin">${pinOptions}</select>
-                  <button type="button" class="btn btn-secondary" data-action="pick-route-origin">Pick from map</button>
                 </div>
                 <div class="hint">${originLocation ? `Selected: ${escapeHtml(originLocation.name)}` : "Choose a pin to start the route."}</div>
               </div>
@@ -1255,7 +1369,6 @@
               <label>Destination</label>
               <div class="field-row">
                 <select id="routeDestination">${pinOptions}</select>
-                <button type="button" class="btn btn-secondary" data-action="pick-route-destination">Pick from map</button>
               </div>
               <div class="hint">${destinationLocationLabel ? `Selected: ${escapeHtml(destinationLocationLabel.name)}` : "Choose a pin to end the route."}</div>
             </div>
@@ -1290,7 +1403,6 @@
             </div>
             <div class="section-head">
               <h2>Points <span class="count">${routeDraft.points.length}</span></h2>
-              <button class="btn btn-secondary" data-action="delete-route-point">Delete selected point</button>
             </div>
             <div class="list scroll">${pointItems || `<p class="hint">No points yet — click the map to add them.</p>`}</div>
           </div>
@@ -1366,7 +1478,7 @@
 
       const pinPreviewImage = escapeHtml(e.draft.image || "");
       body = `
-        <div class="map-hint">${ICONS_SM.move} Click on the map to place · drag the pin to move it</div>
+        <div class="map-hint">${ICONS.MapPin} Click on the map to place · drag the pin to move it</div>
         <div class="field"><label>Name</label><input type="text" id="pName" value="${escapeHtml(e.draft.name)}" placeholder="Room 101"/></div>
         <div class="field"><label>Description</label><textarea id="pDesc" rows="2">${escapeHtml(e.draft.description || "")}</textarea></div>
         <div class="field">
@@ -1534,7 +1646,7 @@
         const origin = destinationLocation(originId);
         if (!origin) return;
         const routeId = "route-" + Date.now();
-        state.routeEditor.draft = {
+        setRouteDraft({
           id: routeId,
           name: `${origin.name} Route`,
           origin: origin.name,
@@ -1544,7 +1656,7 @@
           floor: origin.floor,
           points: [],
           archived: false,
-        };
+        });
         state.routeEditor.originFilter = origin.id;
         state.routeEditor.selectedPointIndex = null;
         state.routeEditor.mode = "segment";
@@ -1552,6 +1664,7 @@
         state.routeEditor.originLocked = true;
         if (origin.floor != null) state.activeFloor = origin.floor;
         renderAll();
+        scrollToRouteEditor();
       });
     });
 
@@ -1560,11 +1673,12 @@
         const routeId = el.dataset.routeId;
         const route = routeById(routeId);
         if (!route) return;
-        state.routeEditor.draft = JSON.parse(JSON.stringify(route));
+        setRouteDraft(JSON.parse(JSON.stringify(route)));
         state.routeEditor.selectedPointIndex = null;
         state.routeEditor.originLocked = true;
         if (route.floor != null) state.activeFloor = route.floor;
         renderAll();
+        scrollToRouteEditor();
       });
     });
     body.querySelectorAll("[data-edit-route]").forEach((el) => {
@@ -1572,11 +1686,12 @@
         e.stopPropagation();
         const route = routeById(el.dataset.editRoute);
         if (!route) return;
-        state.routeEditor.draft = JSON.parse(JSON.stringify(route));
+        setRouteDraft(JSON.parse(JSON.stringify(route)));
         state.routeEditor.selectedPointIndex = null;
         state.routeEditor.originLocked = true;
         if (route.floor != null) state.activeFloor = route.floor;
         renderAll();
+        scrollToRouteEditor();
       });
     });
     body.querySelectorAll("[data-archive-route]").forEach((el) => {
@@ -1602,7 +1717,7 @@
     if (newRoute)
       newRoute.addEventListener("click", () => {
         const routeId = "route-" + Date.now();
-        state.routeEditor.draft = {
+        setRouteDraft({
           id: routeId,
           name: "Route 1",
           origin: "",
@@ -1611,12 +1726,13 @@
           destinationId: "",
           floor: state.activeFloor || state.floors[0]?.id || 1,
           points: [],
-        };
+        });
         state.routeEditor.originFilter = null;
         state.routeEditor.selectedPointIndex = null;
         state.routeEditor.mode = "segment";
         state.routeEditor.pickTarget = null;
         renderAll();
+        scrollToRouteEditor();
       });
 
     // "Add" action buttons
@@ -1710,7 +1826,7 @@
     }
 
     body.querySelectorAll('[data-action="set-route-mode"]').forEach((btn) => {
-      btn.addEventListener("click", () => {
+      btn.addEventListener("click", async () => {
         if (!state.routeEditor.draft) return;
         state.routeEditor.mode = btn.dataset.mode || "segment";
         renderAll();
@@ -1795,14 +1911,7 @@
     body
       .querySelectorAll('[data-action="close-route-editor"]')
       .forEach((btn) => {
-        btn.addEventListener("click", () => {
-          stopRoutePreview();
-          state.routeEditor.draft = null;
-          state.routeEditor.selectedPointIndex = null;
-          state.routeEditor.pickTarget = null;
-          state.routeEditor.originLocked = false;
-          renderAll();
-        });
+        btn.addEventListener("click", () => closeRouteEditorWithConfirm());
       });
     body
       .querySelector('[data-action="delete-route-point"]')
@@ -1816,15 +1925,6 @@
         );
         renderAll();
       });
-    body.querySelectorAll("[data-select-route-point]").forEach((btn) => {
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const idx = Number(btn.dataset.selectRoutePoint);
-        state.routeEditor.selectedPointIndex = idx;
-        renderAll();
-      });
-    });
-
     // Pin search
     const search = body.querySelector("#pinSearch");
     if (search)
@@ -1879,7 +1979,7 @@
     const body = $("#cpBody");
 
     body.querySelectorAll('[data-action="cancel"]').forEach((btn) => {
-      btn.addEventListener("click", () => {
+      btn.addEventListener("click", async () => {
         if (state.edit?.kind === "pin" && state.edit.isNew) {
           state.locations = state.locations.filter(
             (p) => p.id !== state.edit.draft.id,
@@ -1888,9 +1988,8 @@
         if (state.edit) {
           state.edit = null;
         } else if (state.routeEditor.draft) {
-          state.routeEditor.draft = null;
-          state.routeEditor.selectedPointIndex = null;
-          state.routeEditor.originLocked = false;
+          await closeRouteEditorWithConfirm();
+          return;
         }
         renderAll();
       });
@@ -2200,6 +2299,7 @@
     await syncRouteToBackend(route, !existing);
 
     state.routeEditor.draft = null;
+    state.routeEditor.cancelSnapshot = null;
     state.routeEditor.selectedPointIndex = null;
     state.routeEditor.originLocked = false;
     markAdminChangesPending();
@@ -2207,9 +2307,18 @@
     showToast(existing ? "Route updated" : "Route saved");
   }
 
-  function toggleRouteArchived(routeId) {
+  async function toggleRouteArchived(routeId) {
     const route = routeById(routeId);
     if (!route) return;
+    const confirmed = await showAdminActionConfirm({
+      title: route.archived ? "Restore Route" : "Archive Route",
+      message: route.archived
+        ? "Recover this route back to the active route list?"
+        : "Archive this route so Super Admin can review or recover it later?",
+      confirmText: route.archived ? "Restore Route" : "Archive Route",
+      danger: !route.archived,
+    });
+    if (!confirmed) return;
     route.archived = !route.archived;
     state.routes = state.routes.map(r => r.id === route.id ? { ...route } : r);
     saveRoutesLocally();
@@ -2219,12 +2328,23 @@
     showToast(route.archived ? "Route archived" : "Route restored");
   }
 
-  function archiveOriginRoutes(originId) {
+  async function archiveOriginRoutes(originId) {
     const routes = state.routes.filter(r => r.originId === originId && !r.archived);
     if (!routes.length) {
       showToast("No active routes found for this location");
       return;
     }
+    if (routes.length > 1) {
+      showToast("Cannot archive route location since it is connected to different route");
+      return;
+    }
+    const confirmed = await showAdminActionConfirm({
+      title: "Archive Route Location",
+      message: "Archive this route location?",
+      confirmText: "Archive Route Location",
+      danger: true,
+    });
+    if (!confirmed) return;
     routes.forEach(r => { r.archived = true; });
     state.routes = state.routes.map(r => routes.some(a => a.id === r.id) ? { ...r, archived: true } : r);
     saveRoutesLocally();
@@ -2233,11 +2353,18 @@
     showToast("Routes archived for this location");
   }
 
-  function deleteRoute(id) {
-    if (!confirm('Delete this route?')) return;
+  async function deleteRoute(id) {
+    const confirmed = await showAdminActionConfirm({
+      title: "Delete Route",
+      message: "Delete this route? It will appear in Super Admin Archive for recovery.",
+      confirmText: "Delete Route",
+      danger: true,
+    });
+    if (!confirmed) return;
     state.routes = state.routes.filter(r => r.id !== id);
     if (state.routeEditor.draft?.id === id) {
       state.routeEditor.draft = null;
+      state.routeEditor.cancelSnapshot = null;
       state.routeEditor.selectedPointIndex = null;
     }
     saveRoutesLocally();
@@ -2250,7 +2377,13 @@
   // ---------- DELETE ----------
   async function deleteFloor(id) {
     if (state.floors.length <= 1) { showToast("Keep at least one floor"); return; }
-    if (!confirm("Delete this floor and its pins?")) return;
+    const confirmed = await showAdminActionConfirm({
+      title: "Delete Floor",
+      message: "Delete this floor and its pins? They will appear in Super Admin Archive for recovery.",
+      confirmText: "Delete Floor",
+      danger: true,
+    });
+    if (!confirmed) return;
     const res = await apiRequest("floors", "DELETE", null, id);
     if (!res || res.error) { showToast(res?.message || "Could not delete floor"); return; }
     state.floors    = state.floors.filter(f => f.id !== id);
@@ -2265,7 +2398,13 @@
   }
 
   async function deletePin(id) {
-    if (!confirm("Delete this pin?")) return;
+    const confirmed = await showAdminActionConfirm({
+      title: "Delete Pin",
+      message: "Delete this pin? Related routes and points will appear in Super Admin Archive for recovery.",
+      confirmText: "Delete Pin",
+      danger: true,
+    });
+    if (!confirmed) return;
     const res = String(id).startsWith("loc-") ? { success: true } : await apiRequest("pins", "DELETE", null, id);
     if (!res || res.error) { showToast(res?.message || "Could not delete pin"); return; }
     state.locations = state.locations.filter(l => l.id !== id);
@@ -2278,8 +2417,15 @@
 
   async function deleteLegend(id) {
     const usedBy = state.locations.filter(l => String(l.legendId) === String(id)).length;
-    if (usedBy > 0 && !confirm(`This legend is used by ${usedBy} pin(s). Delete anyway?`)) return;
-    else if (usedBy === 0 && !confirm("Delete this legend?")) return;
+    const confirmed = await showAdminActionConfirm({
+      title: "Delete Legend",
+      message: usedBy > 0
+        ? "This legend is used by " + usedBy + " pin(s). Delete anyway?"
+        : "Delete this legend?",
+      confirmText: "Delete Legend",
+      danger: true,
+    });
+    if (!confirmed) return;
     const res = String(id).startsWith("lg-") ? { success: true } : await apiRequest("legends", "DELETE", null, id);
     if (!res || res.error) { showToast(res?.message || "Could not delete legend"); return; }
     state.legends = state.legends.filter(l => l.id !== id);
@@ -2713,7 +2859,7 @@
       renderMap();
     };
 
-    const onUp = () => {
+    const onUp = async () => {
       document.removeEventListener("pointermove", onMove);
       document.removeEventListener("pointerup", onUp);
       const route = state.routeEditor.draft;
@@ -2722,14 +2868,26 @@
         const pin = nearestPin(point.x, point.y, state.activeFloor, 6);
         if (pin) {
           if (!route.originId && index === 0) {
-            if (confirm(`Set ${pin.name} as route origin?`)) {
+            const confirmed = await showAdminActionConfirm({
+              title: "Set Route Origin",
+              message: "Set " + pin.name + " as route origin?",
+              confirmText: "Set Origin",
+              danger: false,
+            });
+            if (confirmed) {
               route.originId = pin.id;
               route.origin = pin.name;
               route.floor = pin.floor;
               route.points[index] = { x: pin.x, y: pin.y, floor: pin.floor };
             }
           } else if (!route.destinationId && index === route.points.length - 1 && pin.id !== route.originId) {
-            if (confirm(`Set ${pin.name} as route destination?`)) {
+            const confirmed = await showAdminActionConfirm({
+              title: "Set Route Destination",
+              message: "Set " + pin.name + " as route destination?",
+              confirmText: "Set Destination",
+              danger: false,
+            });
+            if (confirmed) {
               route.destinationId = pin.id;
               route.destination = pin.name;
               route.points[index] = { x: pin.x, y: pin.y, floor: pin.floor };
