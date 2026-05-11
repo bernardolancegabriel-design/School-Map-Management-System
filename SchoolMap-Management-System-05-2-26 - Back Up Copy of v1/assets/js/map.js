@@ -5,7 +5,8 @@
 
 "use strict";
 
-const API_BASE = typeof getApiBase === "function" ? getApiBase() : "../backend/api.php";
+const API_BASE =
+  typeof getApiBase === "function" ? getApiBase() : "../backend/api.php";
 
 document.addEventListener("DOMContentLoaded", function () {
   initMapPage();
@@ -20,10 +21,15 @@ window.addEventListener("focus", function () {
 
 async function apiGet(action) {
   try {
-    const response = await fetch(typeof apiUrl === "function" ? apiUrl(action) : API_BASE + "?action=" + encodeURIComponent(action), {
-      credentials: "same-origin",
-      cache: "no-store",
-    });
+    const response = await fetch(
+      typeof apiUrl === "function"
+        ? apiUrl(action)
+        : API_BASE + "?action=" + encodeURIComponent(action),
+      {
+        credentials: "same-origin",
+        cache: "no-store",
+      },
+    );
     return await response.json();
   } catch (err) {
     console.warn("API load failed:", action, err);
@@ -33,7 +39,11 @@ async function apiGet(action) {
 
 function normalizeDbImagePath(path) {
   if (!path) return "";
-  if (/^data:/i.test(path) || /^https?:\/\//i.test(path) || /^\/\//.test(path)) {
+  if (
+    /^data:/i.test(path) ||
+    /^https?:\/\//i.test(path) ||
+    /^\/\//.test(path)
+  ) {
     return path;
   }
   if (/^\.?(images\/.+)$/i.test(path)) {
@@ -62,7 +72,11 @@ function normalizeDbLegend(legend) {
   const name = legend.label || legend.name || "Untitled";
   return {
     id: String(legend.id ?? legend.category_id),
-    type: legend.type || String(name).toLowerCase().replace(/[\s/]+/g, "_"),
+    type:
+      legend.type ||
+      String(name)
+        .toLowerCase()
+        .replace(/[\s/]+/g, "_"),
     label: name,
     color: legend.color || "#192A57",
     icon: legend.icon || "MapPin",
@@ -88,7 +102,10 @@ function normalizeDbRoute(route) {
   var routeFloor = Number(route.floor ?? route.map_id ?? 1);
   var points = Array.isArray(route.points) ? route.points.slice() : [];
   points.sort(function (a, b) {
-    return Number(a.point_order ?? a.pointOrder ?? 0) - Number(b.point_order ?? b.pointOrder ?? 0);
+    return (
+      Number(a.point_order ?? a.pointOrder ?? 0) -
+      Number(b.point_order ?? b.pointOrder ?? 0)
+    );
   });
 
   return {
@@ -100,7 +117,8 @@ function normalizeDbRoute(route) {
     destination: route.destination || route.to_pin_name || "",
     direction: route.direction || "",
     floor: routeFloor,
-    archived: route.archived === true || route.archived === 1 || route.archived === "1",
+    archived:
+      route.archived === true || route.archived === 1 || route.archived === "1",
     points: points.map(function (point, index) {
       return {
         x: Number(point.x ?? 50),
@@ -175,7 +193,11 @@ async function refreshMapDataFromDatabase() {
   var previousFilter = AppState.activeLegendFilter;
   await loadMapDataFromDatabase();
 
-  if (AppState.floors.some(function (floor) { return String(floor.id) === String(previousFloor); })) {
+  if (
+    AppState.floors.some(function (floor) {
+      return String(floor.id) === String(previousFloor);
+    })
+  ) {
     AppState.currentFloor = previousFloor;
   } else {
     AppState.currentFloor = AppState.floors[0]?.id || null;
@@ -183,7 +205,9 @@ async function refreshMapDataFromDatabase() {
 
   if (
     previousFilter !== null &&
-    !AppState.legends.some(function (legend) { return String(legend.id) === String(previousFilter); })
+    !AppState.legends.some(function (legend) {
+      return String(legend.id) === String(previousFilter);
+    })
   ) {
     AppState.activeLegendFilter = null;
   } else {
@@ -208,7 +232,9 @@ function enableMapTransitions() {
 /* ====================== USER AREA ====================== */
 
 function isAdminUser(user) {
-  var role = String((user && user.role) || "").trim().toLowerCase();
+  var role = String((user && user.role) || "")
+    .trim()
+    .toLowerCase();
   return role === "admin" || role === "super_admin";
 }
 
@@ -260,18 +286,24 @@ function saveGuestLog(guest) {
   const payload = {
     name: guest.fullName,
     purpose: guest.purpose,
-    destination: document.getElementById("guest-destination").value.trim() || "Map",
+    destination:
+      document.getElementById("guest-destination").value.trim() || "Map",
     category: guest.category,
-    time_in: now.toTimeString().split(' ')[0],
-    date: now.toISOString().split('T')[0],
+    time_in: now.toTimeString().split(" ")[0],
+    date: now.toISOString().split("T")[0],
     plate_no: document.getElementById("guest-plate").value.trim() || null,
   };
 
-  fetch(typeof apiUrl === "function" ? apiUrl("visitor_logs") : API_BASE + "?action=visitor_logs", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  }).catch(err => console.warn("Failed to save visitor log to DB:", err));
+  fetch(
+    typeof apiUrl === "function"
+      ? apiUrl("visitor_logs")
+      : API_BASE + "?action=visitor_logs",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  ).catch((err) => console.warn("Failed to save visitor log to DB:", err));
 }
 
 function saveGuestTimeOut(guest) {
@@ -279,75 +311,6 @@ function saveGuestTimeOut(guest) {
 }
 
 /* ====================== GUEST FLOW ====================== */
-
-function initGuestFlow() {
-  loadCurrentUser();
-
-  const isGuestMode = sessionStorage.getItem("guest_mode") === "true";
-
-  if (isGuestMode) {
-    sessionStorage.removeItem("guest_mode");
-
-    if (!AppState.currentUser || !AppState.currentUser.isGuest) {
-      showGuestLogbookModal();
-    } else {
-      renderUserArea();
-    }
-  } else {
-    renderUserArea();
-  }
-}
-
-function showGuestLogbookModal() {
-  const modal = document.getElementById("guest-logbook-modal");
-  const dateInput = document.getElementById("guest-datetime");
-
-  if (modal) modal.classList.add("active");
-
-  if (dateInput) {
-    const now = new Date();
-    dateInput.value =
-      now.toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      }) +
-      " " +
-      now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-  }
-}
-
-function handleGuestSubmit(e) {
-  e.preventDefault();
-
-  const name = document.getElementById("guest-name").value.trim();
-  const category = document.getElementById("guest-category").value;
-  const purpose = document.getElementById("guest-purpose").value.trim();
-
-  if (!name || !category) {
-    showToast("Please fill in all required fields.");
-    return;
-  }
-
-  const guestUser = {
-    id: "guest_" + Date.now(),
-    fullName: name,
-    role: category,
-    isGuest: true,
-    category: category,
-    purpose: purpose,
-    time_in: new Date().toISOString(),
-    loggedInAt: new Date().toISOString(),
-  };
-
-  saveCurrentUser(guestUser);
-  saveGuestLog(guestUser);
-  renderUserArea();
-
-  document.getElementById("guest-logbook-modal").classList.remove("active");
-  showToast(`Welcome, ${name}!`);
-  showEntryBanner();
-}
 
 /* ====================== LOGOUT ====================== */
 
@@ -467,7 +430,8 @@ function renderFloorButtons() {
   }
   var html = "";
   if (!AppState.floors.length) {
-    container.innerHTML = '<p class="map-empty-note">No floors found in database.</p>';
+    container.innerHTML =
+      '<p class="map-empty-note">No floors found in database.</p>';
     return;
   }
   AppState.floors.forEach(function (floor) {
@@ -529,14 +493,19 @@ function renderLegendItems() {
     "</button>";
 
   if (!AppState.legends.length) {
-    container.innerHTML = html + '<p class="map-empty-note">No legends found in database.</p>';
+    container.innerHTML =
+      html + '<p class="map-empty-note">No legends found in database.</p>';
     return;
   }
 
   AppState.legends.forEach(function (leg) {
-    var active = String(AppState.activeLegendFilter) === String(leg.id) ? " active" : "";
+    var active =
+      String(AppState.activeLegendFilter) === String(leg.id) ? " active" : "";
     var count = AppState.locations.filter(function (loc) {
-      return String(loc.floor) === String(AppState.currentFloor) && String(loc.legendId) === String(leg.id);
+      return (
+        String(loc.floor) === String(AppState.currentFloor) &&
+        String(loc.legendId) === String(leg.id)
+      );
     }).length;
     html +=
       '<button type="button" class="legend-item legend-filter-item' +
@@ -563,7 +532,8 @@ function renderLegendItems() {
 }
 
 function setLegendFilter(legendId) {
-  AppState.activeLegendFilter = legendId === null || legendId === undefined ? null : String(legendId);
+  AppState.activeLegendFilter =
+    legendId === null || legendId === undefined ? null : String(legendId);
   AppState.selectedLocation = null;
   closeSelectedPanel();
   renderLegendItems();
@@ -594,7 +564,9 @@ function getLocationType(loc) {
 function getVisibleFloorLocations() {
   return AppState.locations.filter(function (loc) {
     var sameFloor = String(loc.floor) === String(AppState.currentFloor);
-    var sameLegend = AppState.activeLegendFilter === null || String(loc.legendId) === String(AppState.activeLegendFilter);
+    var sameLegend =
+      AppState.activeLegendFilter === null ||
+      String(loc.legendId) === String(AppState.activeLegendFilter);
     return sameFloor && sameLegend;
   });
 }
@@ -615,7 +587,10 @@ function getLegendSidebarIcon(legend) {
 function getLocationTypeLabel(loc) {
   var typeKey = getLocationType(loc);
   var legend = AppState.legends.find(function (l) {
-    return (l.type && String(l.type) === String(typeKey)) || (l.id && String(l.id) === String(typeKey));
+    return (
+      (l.type && String(l.type) === String(typeKey)) ||
+      (l.id && String(l.id) === String(typeKey))
+    );
   });
   return legend ? legend.label : escHtml(typeKey);
 }
@@ -729,7 +704,10 @@ function setupMapInteractions() {
       var cx = e.clientX - rect.left - rect.width / 2;
       var cy = e.clientY - rect.top - rect.height / 2;
       var oldZoom = AppState.zoom;
-      var newZoom = Math.min(4, Math.max(0.25, +(oldZoom - e.deltaY * 0.001).toFixed(3)));
+      var newZoom = Math.min(
+        4,
+        Math.max(0.25, +(oldZoom - e.deltaY * 0.001).toFixed(3)),
+      );
       var zoomRatio = newZoom / oldZoom;
       AppState.panX = cx + ((AppState.panX || 0) - cx) * zoomRatio;
       AppState.panY = cy + ((AppState.panY || 0) - cy) * zoomRatio;
@@ -752,8 +730,11 @@ function renderPins() {
 
   // During route display, show only origin and destination pins
   if (AppState.showRoute && AppState.routeFrom && AppState.routeTo) {
-    floorLocs = floorLocs.filter(function(loc) {
-      return String(loc.id) === String(AppState.routeFrom) || String(loc.id) === String(AppState.routeTo);
+    floorLocs = floorLocs.filter(function (loc) {
+      return (
+        String(loc.id) === String(AppState.routeFrom) ||
+        String(loc.id) === String(AppState.routeTo)
+      );
     });
   }
 
@@ -772,8 +753,8 @@ function renderPins() {
       : "onmouseenter=\"showPinTooltip(event,'" +
         loc.id +
         "')\" " +
-        "onmousemove=\"movePinTooltip(event)\" " +
-        "onmouseleave=\"hidePinTooltip()\" ";
+        'onmousemove="movePinTooltip(event)" ' +
+        'onmouseleave="hidePinTooltip()" ';
 
     var labelHtml = "";
     if (AppState.showLabels) {
@@ -815,8 +796,12 @@ function renderPins() {
 
 function getPinTooltipHtml(loc) {
   var html =
-    '<strong>' + escHtml(loc.name) + '</strong>' +
-    '<span>' + escHtml(getLocationTypeLabel(loc)) + '</span>';
+    "<strong>" +
+    escHtml(loc.name) +
+    "</strong>" +
+    "<span>" +
+    escHtml(getLocationTypeLabel(loc)) +
+    "</span>";
 
   if (loc.image) {
     html +=
@@ -869,7 +854,10 @@ function hidePinTooltip() {
 
 function getPinIcon(type, size) {
   var legend = AppState.legends.find(function (l) {
-    return (l.type && String(l.type) === String(type)) || (l.id && String(l.id) === String(type));
+    return (
+      (l.type && String(l.type) === String(type)) ||
+      (l.id && String(l.id) === String(type))
+    );
   });
 
   if (legend && legend.iconUrl) {
@@ -1029,44 +1017,114 @@ function getPinIcon(type, size) {
       '" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3" fill="white"/></svg>',
   };
   Object.assign(icons, {
-    Home: iconSvg('<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>'),
-    Star: iconSvg('<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>'),
-    Toilet: iconSvg('<path d="M3 3h8v4H3z"/><path d="M7 7v2a4 4 0 0 0 8 0V7"/><path d="M11 13v7"/><path d="M8 20h6"/>'),
-    Building2: iconSvg('<path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18"/><path d="M6 12H4a2 2 0 0 0-2 2v8"/><path d="M18 9h2a2 2 0 0 1 2 2v11"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/>'),
-    School: iconSvg('<path d="M2 22h20"/><path d="M6 18V9l6-4 6 4v9"/><path d="M10 22v-6h4v6"/><path d="M8 12h.01"/><path d="M16 12h.01"/>'),
-    GraduationCap: iconSvg('<path d="M22 10 12 5 2 10l10 5 10-5Z"/><path d="M6 12v5c3 2 9 2 12 0v-5"/><path d="M22 10v6"/>'),
-    FlaskConical: iconSvg('<path d="M10 2v7.3L4.4 19a2 2 0 0 0 1.7 3h11.8a2 2 0 0 0 1.7-3L14 9.3V2"/><path d="M8.5 2h7"/><path d="M7 16h10"/>'),
-    Monitor: iconSvg('<rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/>'),
-    Printer: iconSvg('<path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/><path d="M18 12h.01"/>'),
-    Wifi: iconSvg('<path d="M5 13a10 10 0 0 1 14 0"/><path d="M8.5 16.5a5 5 0 0 1 7 0"/><path d="M2 9a15 15 0 0 1 20 0"/><path d="M12 20h.01"/>'),
-    Phone: iconSvg('<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 2 .7 2.8a2 2 0 0 1-.4 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2Z"/>'),
-    Info: iconSvg('<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>'),
-    HelpCircle: iconSvg('<circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 1 1 5.8 1c-.6 1.1-2 1.4-2.6 2.4-.2.3-.3.7-.3 1.1"/><path d="M12 17h.01"/>'),
-    Shield: iconSvg('<path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V5l8-3 8 3v8Z"/>'),
-    HeartPulse: iconSvg('<path d="M19.5 13.6 12 21l-7.5-7.4A5 5 0 0 1 12 7a5 5 0 0 1 7.5 6.6Z"/><path d="M3 12h4l2-3 3 6 2-3h7"/>'),
+    Home: iconSvg(
+      '<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>',
+    ),
+    Star: iconSvg(
+      '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>',
+    ),
+    Toilet: iconSvg(
+      '<path d="M3 3h8v4H3z"/><path d="M7 7v2a4 4 0 0 0 8 0V7"/><path d="M11 13v7"/><path d="M8 20h6"/>',
+    ),
+    Building2: iconSvg(
+      '<path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18"/><path d="M6 12H4a2 2 0 0 0-2 2v8"/><path d="M18 9h2a2 2 0 0 1 2 2v11"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/>',
+    ),
+    School: iconSvg(
+      '<path d="M2 22h20"/><path d="M6 18V9l6-4 6 4v9"/><path d="M10 22v-6h4v6"/><path d="M8 12h.01"/><path d="M16 12h.01"/>',
+    ),
+    GraduationCap: iconSvg(
+      '<path d="M22 10 12 5 2 10l10 5 10-5Z"/><path d="M6 12v5c3 2 9 2 12 0v-5"/><path d="M22 10v6"/>',
+    ),
+    FlaskConical: iconSvg(
+      '<path d="M10 2v7.3L4.4 19a2 2 0 0 0 1.7 3h11.8a2 2 0 0 0 1.7-3L14 9.3V2"/><path d="M8.5 2h7"/><path d="M7 16h10"/>',
+    ),
+    Monitor: iconSvg(
+      '<rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/>',
+    ),
+    Printer: iconSvg(
+      '<path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/><path d="M18 12h.01"/>',
+    ),
+    Wifi: iconSvg(
+      '<path d="M5 13a10 10 0 0 1 14 0"/><path d="M8.5 16.5a5 5 0 0 1 7 0"/><path d="M2 9a15 15 0 0 1 20 0"/><path d="M12 20h.01"/>',
+    ),
+    Phone: iconSvg(
+      '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 2 .7 2.8a2 2 0 0 1-.4 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2Z"/>',
+    ),
+    Info: iconSvg(
+      '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
+    ),
+    HelpCircle: iconSvg(
+      '<circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 1 1 5.8 1c-.6 1.1-2 1.4-2.6 2.4-.2.3-.3.7-.3 1.1"/><path d="M12 17h.01"/>',
+    ),
+    Shield: iconSvg(
+      '<path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V5l8-3 8 3v8Z"/>',
+    ),
+    HeartPulse: iconSvg(
+      '<path d="M19.5 13.6 12 21l-7.5-7.4A5 5 0 0 1 12 7a5 5 0 0 1 7.5 6.6Z"/><path d="M3 12h4l2-3 3 6 2-3h7"/>',
+    ),
     Cross: iconSvg('<path d="M11 2h2v7h7v2h-7v11h-2V11H4V9h7z"/>'),
-    Accessibility: iconSvg('<circle cx="12" cy="4" r="2"/><path d="M4 10h16"/><path d="M12 6v8"/><path d="m8 22 4-8 4 8"/>'),
-    ParkingCircle: iconSvg('<circle cx="12" cy="12" r="10"/><path d="M10 16V8h3a2.5 2.5 0 0 1 0 5h-3"/>'),
-    Bus: iconSvg('<path d="M6 17h12l1-5V5a3 3 0 0 0-3-3H8a3 3 0 0 0-3 3v7l1 5Z"/><path d="M8 22h.01"/><path d="M16 22h.01"/><path d="M5 9h14"/><path d="M8 13h.01"/><path d="M16 13h.01"/>'),
-    Coffee: iconSvg('<path d="M4 8h14v6a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4Z"/><path d="M18 9h1a3 3 0 0 1 0 6h-1"/><path d="M6 2v2"/><path d="M10 2v2"/><path d="M14 2v2"/>'),
-    Wrench: iconSvg('<path d="M14.7 6.3a4 4 0 0 0-5 5L3 18v3h3l6.7-6.7a4 4 0 0 0 5-5l-2.4 2.4-2-2 2.4-2.4Z"/>'),
-    Settings: iconSvg('<path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V22a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1A2 2 0 1 1 4.2 18l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1A2 2 0 1 1 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3h.1A1.7 1.7 0 0 0 10 3V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1A2 2 0 1 1 19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9v.1A1.7 1.7 0 0 0 21 10h.1a2 2 0 1 1 0 4H21a1.7 1.7 0 0 0-1.6 1Z"/>'),
-    Archive: iconSvg('<rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/>'),
-    Landmark: iconSvg('<path d="M3 22h18"/><path d="M6 18V9"/><path d="M10 18V9"/><path d="M14 18V9"/><path d="M18 18V9"/><path d="m12 2 9 5H3Z"/>'),
+    Accessibility: iconSvg(
+      '<circle cx="12" cy="4" r="2"/><path d="M4 10h16"/><path d="M12 6v8"/><path d="m8 22 4-8 4 8"/>',
+    ),
+    ParkingCircle: iconSvg(
+      '<circle cx="12" cy="12" r="10"/><path d="M10 16V8h3a2.5 2.5 0 0 1 0 5h-3"/>',
+    ),
+    Bus: iconSvg(
+      '<path d="M6 17h12l1-5V5a3 3 0 0 0-3-3H8a3 3 0 0 0-3 3v7l1 5Z"/><path d="M8 22h.01"/><path d="M16 22h.01"/><path d="M5 9h14"/><path d="M8 13h.01"/><path d="M16 13h.01"/>',
+    ),
+    Coffee: iconSvg(
+      '<path d="M4 8h14v6a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4Z"/><path d="M18 9h1a3 3 0 0 1 0 6h-1"/><path d="M6 2v2"/><path d="M10 2v2"/><path d="M14 2v2"/>',
+    ),
+    Wrench: iconSvg(
+      '<path d="M14.7 6.3a4 4 0 0 0-5 5L3 18v3h3l6.7-6.7a4 4 0 0 0 5-5l-2.4 2.4-2-2 2.4-2.4Z"/>',
+    ),
+    Settings: iconSvg(
+      '<path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V22a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1A2 2 0 1 1 4.2 18l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1A2 2 0 1 1 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3h.1A1.7 1.7 0 0 0 10 3V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1A2 2 0 1 1 19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9v.1A1.7 1.7 0 0 0 21 10h.1a2 2 0 1 1 0 4H21a1.7 1.7 0 0 0-1.6 1Z"/>',
+    ),
+    Archive: iconSvg(
+      '<rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/>',
+    ),
+    Landmark: iconSvg(
+      '<path d="M3 22h18"/><path d="M6 18V9"/><path d="M10 18V9"/><path d="M14 18V9"/><path d="M18 18V9"/><path d="m12 2 9 5H3Z"/>',
+    ),
     Navigation: iconSvg('<polygon points="3 11 22 2 13 21 11 13 3 11"/>'),
-    Compass: iconSvg('<circle cx="12" cy="12" r="10"/><polygon points="16.2 7.8 14 14 7.8 16.2 10 10 16.2 7.8"/>'),
+    Compass: iconSvg(
+      '<circle cx="12" cy="12" r="10"/><polygon points="16.2 7.8 14 14 7.8 16.2 10 10 16.2 7.8"/>',
+    ),
     Clock: iconSvg('<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>'),
-    Calendar: iconSvg('<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/>'),
-    Users: iconSvg('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9"/><path d="M16 3.1a4 4 0 0 1 0 7.8"/>'),
-    ClipboardList: iconSvg('<rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M8 12h8"/><path d="M8 16h8"/><path d="M8 8h.01"/>'),
-    FileCheck: iconSvg('<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="m9 15 2 2 4-4"/>'),
-    Package: iconSvg('<path d="m21 8-9-5-9 5 9 5 9-5Z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/>'),
-    KeyRound: iconSvg('<circle cx="7.5" cy="15.5" r="5.5"/><path d="m12 12 9-9"/><path d="m16 7 2 2"/><path d="m19 4 2 2"/>'),
-    Lock: iconSvg('<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>'),
-    Bell: iconSvg('<path d="M18 8a6 6 0 1 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/>'),
-    Megaphone: iconSvg('<path d="m3 11 18-5v12L3 13Z"/><path d="M11.6 16.8a3 3 0 0 1-5.8-1.6"/>'),
-    Camera: iconSvg('<path d="M14.5 4 16 7h4a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h4l1.5-3Z"/><circle cx="12" cy="13" r="3"/>'),
-    Image: iconSvg('<rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/>'),
+    Calendar: iconSvg(
+      '<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/>',
+    ),
+    Users: iconSvg(
+      '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9"/><path d="M16 3.1a4 4 0 0 1 0 7.8"/>',
+    ),
+    ClipboardList: iconSvg(
+      '<rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M8 12h8"/><path d="M8 16h8"/><path d="M8 8h.01"/>',
+    ),
+    FileCheck: iconSvg(
+      '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="m9 15 2 2 4-4"/>',
+    ),
+    Package: iconSvg(
+      '<path d="m21 8-9-5-9 5 9 5 9-5Z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/>',
+    ),
+    KeyRound: iconSvg(
+      '<circle cx="7.5" cy="15.5" r="5.5"/><path d="m12 12 9-9"/><path d="m16 7 2 2"/><path d="m19 4 2 2"/>',
+    ),
+    Lock: iconSvg(
+      '<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+    ),
+    Bell: iconSvg(
+      '<path d="M18 8a6 6 0 1 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/>',
+    ),
+    Megaphone: iconSvg(
+      '<path d="m3 11 18-5v12L3 13Z"/><path d="M11.6 16.8a3 3 0 0 1-5.8-1.6"/>',
+    ),
+    Camera: iconSvg(
+      '<path d="M14.5 4 16 7h4a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h4l1.5-3Z"/><circle cx="12" cy="13" r="3"/>',
+    ),
+    Image: iconSvg(
+      '<rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/>',
+    ),
   });
 
   var iconKey = legend && legend.icon ? legend.icon : type;
@@ -1121,7 +1179,11 @@ function showSelectedPanel(loc) {
     loc.floor +
     "</p>" +
     (loc.image
-      ? '<img class="info-panel-pin-image" src="' + escAttr(loc.image) + '" alt="' + escAttr(loc.name) + ' image"/>'
+      ? '<img class="info-panel-pin-image" src="' +
+        escAttr(loc.image) +
+        '" alt="' +
+        escAttr(loc.name) +
+        ' image"/>'
       : "") +
     (loc.description
       ? '<p class="info-panel-desc">' + escHtml(loc.description) + "</p>"
@@ -1352,10 +1414,10 @@ function resetRoute() {
   AppState.selectedLocation = null;
 
   // Reset route selectors
-  var fromSelect = document.getElementById('route-from');
-  var toSelect = document.getElementById('route-to');
-  if (fromSelect) fromSelect.value = '';
-  if (toSelect) toSelect.value = '';
+  var fromSelect = document.getElementById("route-from");
+  var toSelect = document.getElementById("route-to");
+  if (fromSelect) fromSelect.value = "";
+  if (toSelect) toSelect.value = "";
 
   clearPublicRouteOverlay();
 
@@ -1393,26 +1455,32 @@ function confirmRestartRoute() {
 function findSavedRoute(fromId, toId) {
   var routes = Array.isArray(AppState.routes) ? AppState.routes : [];
   var forward = routes.find(function (route) {
-    return !route.archived &&
+    return (
+      !route.archived &&
       String(route.originId) === String(fromId) &&
-      String(route.destinationId) === String(toId);
+      String(route.destinationId) === String(toId)
+    );
   });
   if (forward) {
     return { route: forward, reversed: false };
   }
 
   var reverse = routes.find(function (route) {
-    return !route.archived &&
+    return (
+      !route.archived &&
       String(route.originId) === String(toId) &&
-      String(route.destinationId) === String(fromId);
+      String(route.destinationId) === String(fromId)
+    );
   });
   return reverse ? { route: reverse, reversed: true } : null;
 }
 
 function getLocationById(locId) {
-  return AppState.locations.find(function (loc) {
-    return String(loc.id) === String(locId);
-  }) || null;
+  return (
+    AppState.locations.find(function (loc) {
+      return String(loc.id) === String(locId);
+    }) || null
+  );
 }
 
 function getRouteDisplayPoints(route, reversed) {
@@ -1427,12 +1495,14 @@ function getRouteDisplayPoints(route, reversed) {
     savedPoints.reverse();
   }
 
-  var points = [{
-    x: fromLoc.x,
-    y: fromLoc.y,
-    floor: fromLoc.floor,
-    type: "origin",
-  }];
+  var points = [
+    {
+      x: fromLoc.x,
+      y: fromLoc.y,
+      floor: fromLoc.floor,
+      type: "origin",
+    },
+  ];
 
   savedPoints.forEach(function (point) {
     points.push({
@@ -1511,9 +1581,15 @@ function renderRouteOverlay() {
     return;
   }
 
-  var displayPoints = getRouteDisplayPoints(route, !!AppState.activeRouteReversed);
+  var displayPoints = getRouteDisplayPoints(
+    route,
+    !!AppState.activeRouteReversed,
+  );
   var segments = getRouteSegments(displayPoints).filter(function (segment) {
-    return segment.sameFloor && String(segment.floor) === String(AppState.currentFloor);
+    return (
+      segment.sameFloor &&
+      String(segment.floor) === String(AppState.currentFloor)
+    );
   });
 
   if (!segments.length) {
@@ -1522,7 +1598,9 @@ function renderRouteOverlay() {
 
   var fromLoc = getLocationById(AppState.routeFrom);
   var colorMap = getColorMap();
-  var routeColor = fromLoc ? colorMap[getLocationType(fromLoc)] || "#2d5da1" : "#2d5da1";
+  var routeColor = fromLoc
+    ? colorMap[getLocationType(fromLoc)] || "#2d5da1"
+    : "#2d5da1";
 
   svg.style.display = "block";
   svg.setAttribute("viewBox", "0 0 100 100");
@@ -1545,9 +1623,21 @@ function renderRouteOverlay() {
   });
 
   renderRouteEndpointDot(pointsLayer, displayPoints[0], "route-endpoint-start");
-  renderRouteEndpointDot(pointsLayer, displayPoints[displayPoints.length - 1], "route-endpoint-finish");
-  renderFixedRoutePinTooltip(pointsLayer, getLocationById(AppState.routeFrom), "route-fixed-tooltip-start");
-  renderFixedRoutePinTooltip(pointsLayer, getLocationById(AppState.routeTo), "route-fixed-tooltip-finish");
+  renderRouteEndpointDot(
+    pointsLayer,
+    displayPoints[displayPoints.length - 1],
+    "route-endpoint-finish",
+  );
+  renderFixedRoutePinTooltip(
+    pointsLayer,
+    getLocationById(AppState.routeFrom),
+    "route-fixed-tooltip-start",
+  );
+  renderFixedRoutePinTooltip(
+    pointsLayer,
+    getLocationById(AppState.routeTo),
+    "route-fixed-tooltip-finish",
+  );
 }
 
 function renderRouteEndpointDot(layer, point, className) {
@@ -1585,15 +1675,14 @@ function showRouteInfoPanel(fromLoc, toLoc) {
   var html =
     '<div style="margin-bottom: 16px;">' +
     getPinTooltipHtml(fromLoc) +
-    '</div>';
+    "</div>";
 
   html +=
-    '<div style="margin-bottom: 8px;">' +
-    getPinTooltipHtml(toLoc) +
-    '</div>';
+    '<div style="margin-bottom: 8px;">' + getPinTooltipHtml(toLoc) + "</div>";
 
   if (fromLoc.floor !== toLoc.floor) {
-    html += '<p class="route-warn" style="margin-top: 12px; font-size: 12px; color: #C24322;">⚠ Different floors! Use stairwell.</p>';
+    html +=
+      '<p class="route-warn" style="margin-top: 12px; font-size: 12px; color: #C24322;">⚠ Different floors! Use stairwell.</p>';
   }
 
   content.innerHTML = html;
@@ -1641,7 +1730,7 @@ function applyZoom() {
       ")";
     canvas.style.transformOrigin = "center center";
   }
-  
+
   var zoomLabel = document.getElementById("zoomLabel");
   if (zoomLabel) {
     zoomLabel.textContent = Math.round(AppState.zoom * 100) + "%";
@@ -1715,6 +1804,9 @@ function initGuestFlow() {
     } else {
       renderUserArea();
     }
+  } else if (AppState.currentUser && AppState.currentUser.isGuest) {
+    // If user is guest, show modal on refresh to persist state - added to make modal stay on refresh
+    showGuestLogbookModal();
   } else {
     renderUserArea();
   }
@@ -1722,6 +1814,7 @@ function initGuestFlow() {
 
 function showGuestLogbookModal() {
   const modal = document.getElementById("guest-logbook-modal");
+  const dateInput = document.getElementById("guest-datetime");
   const card = document.getElementById("guest-modal-card");
   const title = document.getElementById("modal-title");
   const subtitle = document.getElementById("modal-subtitle");
@@ -1730,9 +1823,27 @@ function showGuestLogbookModal() {
 
   if (!modal || !card) return;
 
+  // 1. Show modal
   modal.classList.add("active");
 
-  // Reset to Entry Mode
+  // 2. ✅ SET DATE/TIME — MERGED LOGIC
+  if (dateInput) {
+    const now = new Date();
+    const formatted =
+      now.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      }) +
+      " " +
+      now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+
+    dateInput.value = formatted;
+    // EXTRA: Set attribute para sure na ma-render ng browser
+    dateInput.setAttribute("value", formatted);
+  }
+
+  // 3. Reset UI to Entry Mode
   card.style.background = "";
   card.style.border = "";
   title.textContent = "Visitor Logbook";
@@ -1742,13 +1853,18 @@ function showGuestLogbookModal() {
   submitBtn.className = "wobbly-btn wobbly-btn-primary w-full guest-submit-btn";
   backLink.style.display = "block";
 
-  // Make fields editable
-  document.getElementById("guest-name").readOnly = false;
-  document.getElementById("guest-category").disabled = false;
-  document.getElementById("guest-purpose").readOnly = false;
+  // 4. Make fields editable
+  const nameInput = document.getElementById("guest-name");
+  const catInput = document.getElementById("guest-category");
+  const purInput = document.getElementById("guest-purpose");
 
+  if (nameInput) nameInput.readOnly = false;
+  if (catInput) catInput.disabled = false;
+  if (purInput) purInput.readOnly = false;
+
+  // 5. Attach form handler
   const form = document.getElementById("guest-logbook-form");
-  form.onsubmit = handleGuestSubmit;
+  if (form) form.onsubmit = handleGuestSubmit;
 }
 
 function handleGuestSubmit(e) {
@@ -1763,25 +1879,35 @@ function handleGuestSubmit(e) {
     return;
   }
 
-  const guestUser = {
-    id: "guest_" + Date.now(),
-    fullName: name,
-    role: category,
-    isGuest: true,
-    category: category,
-    purpose: purpose,
-    time_in: new Date().toISOString(),
-    loggedInAt: new Date().toISOString(),
-  };
+  // Disable submit button and show loading
+  const submitBtn = document.getElementById("guest-submit-btn");
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Loading...";
+  }
 
-  saveCurrentUser(guestUser);
-  saveGuestLog(guestUser);
+  // Add 1-second delay before processing - added for 1sec load on click
+  setTimeout(() => {
+    const guestUser = {
+      id: "guest_" + Date.now(),
+      fullName: name,
+      role: category,
+      isGuest: true,
+      category: category,
+      purpose: purpose,
+      time_in: new Date().toISOString(),
+      loggedInAt: new Date().toISOString(),
+    };
 
-  renderUserArea();
+    saveCurrentUser(guestUser);
+    saveGuestLog(guestUser);
 
-  document.getElementById("guest-logbook-modal").classList.remove("active");
-  showToast(`Welcome, ${name}!`);
-  showEntryBanner();
+    renderUserArea();
+
+    document.getElementById("guest-logbook-modal").classList.remove("active");
+    showToast(`Welcome, ${name}!`);
+    showEntryBanner();
+  }, 1000); // 1-second delay
 }
 
 /* ===== GUEST LOGOUT CONFIRMATION ===== */

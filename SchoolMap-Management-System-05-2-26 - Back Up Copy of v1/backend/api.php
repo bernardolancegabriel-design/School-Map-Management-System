@@ -546,8 +546,9 @@ function handleLogin(PDO $pdo, array $data)
 }
 
 function handleVerifyOtp(PDO $pdo, array $data)
-{
-    require_once 'D:/xampp/htdocs/School-Map-Management-System/vendor/autoload.php';
+{   date_default_timezone_set('Asia/Manila'); //force timezone
+
+    require_once 'C:\xampp\htdocs\CAYABYAB\School-Map-Management-System\vendor\autoload.php';
 
     $identifier = isset($data['identifier']) ? trim($data['identifier']) : '';
     $otp        = isset($data['otp'])        ? trim($data['otp'])        : '';
@@ -580,7 +581,7 @@ function handleVerifyOtp(PDO $pdo, array $data)
 
     // Validate TOTP using PragmaRX
     $google2fa   = new \PragmaRX\Google2FA\Google2FA();
-    $isValid     = $google2fa->verifyKey($user['totp_secret'], $otp);
+    $isValid     = $google2fa->verifyKey($user['totp_secret'], $otp, 8);
 
     if (!$isValid) {
         jsonError(401, 'Invalid OTP code. Please try again.');
