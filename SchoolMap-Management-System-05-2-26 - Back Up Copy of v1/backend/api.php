@@ -213,7 +213,7 @@ function routeArchiveData(PDO $pdo, int $routeId)
     if (!$route) { return null; }
 
     $pointStmt = $pdo->prepare("
-        SELECT id, route_id, point_order, x, y
+        SELECT id, route_id, point_order, x, y, floor
         FROM route_points
         WHERE route_id = :id
         ORDER BY point_order ASC
@@ -347,6 +347,29 @@ function ensureRouteNameColumn(PDO $pdo)
     }
 }
 
+function ensureRouteDestinationColumn(PDO $pdo)
+{
+    static $checked = false;
+    if ($checked) { return; }
+    $checked = true;
+
+    try {
+        $stmt = $pdo->prepare(
+            "SELECT column_name FROM information_schema.columns " .
+            "WHERE table_schema = DATABASE() " .
+            "AND table_name = 'routes' " .
+            "AND column_name = 'destination'"
+        );
+        $stmt->execute();
+
+        if (!$stmt->fetchColumn()) {
+            $pdo->exec("ALTER TABLE routes ADD COLUMN destination VARCHAR(255) NOT NULL DEFAULT '' AFTER to_pin_id");
+        }
+    } catch (PDOException $e) {
+        // Ignore schema migration failures to keep the API available.
+    }
+}
+
 function ensureVisitorLogsTimeOut(PDO $pdo)
 {
     static $checked = false;
@@ -387,11 +410,105 @@ function ensureAdminDisabledColumn(PDO $pdo)
     }
 }
 
+function saveBase64FloorImage(string $base64Data)
+{
+    if (
+        empty($base64Data) ||
+        !preg_match('/^data:image\/(png|jpeg|jpg|gif|webp|svg\+xml);base64,/i', $base64Data, $matches)
+    ) {
+        return '';
+    }
+
+    try {
+        $uploadsDir = __DIR__ . '/../uploads/floors/';
+        if (!is_dir($uploadsDir)) {
+            mkdir($uploadsDir, 0777, true);
+        }
+
+        $parts = explode(',', $base64Data, 2);
+        if (count($parts) !== 2) {
+            return '';
+        }
+
+        $ext = strtolower($matches[1]);
+        if ($ext === 'jpg' || $ext === 'jpeg') {
+            $ext = 'jpg';
+        } elseif ($ext === 'svg+xml') {
+            $ext = 'svg';
+        }
+
+        $decoded = base64_decode($parts[1], true);
+        if ($decoded === false) {
+            return '';
+        }
+
+        $filename = 'floor_' . uniqid() . '_' . time() . '.' . $ext;
+        $filepath = $uploadsDir . $filename;
+
+        if (file_put_contents($filepath, $decoded) === false) {
+            return '';
+        }
+
+        @chmod($filepath, 0644);
+
+        return '../uploads/floors/' . $filename;
+    } catch (Exception $e) {
+        return '';
+    }
+}
+
+function ensureRoutePointFloorColumn(PDO $pdo)
+{
+    static $checked = false;
+    if ($checked) { return; }
+    $checked = true;
+
+    try {
+        $stmt = $pdo->prepare(
+            "SELECT COLUMN_NAME FROM information_schema.COLUMNS " .
+            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'route_points' AND COLUMN_NAME = 'floor'"
+        );
+        $stmt->execute();
+        if (!$stmt->fetch()) {
+            $pdo->exec("ALTER TABLE route_points ADD COLUMN floor INT NULL AFTER y");
+        }
+    } catch (PDOException $e) {
+        // Ignore schema migration failures to keep the API available.
+    }
+}
+
+function ensureLegendIconColumn(PDO $pdo)
+{
+    static $checked = false;
+    if ($checked) { return; }
+    $checked = true;
+
+    try {
+        $stmt = $pdo->prepare(
+            "SELECT DATA_TYPE FROM information_schema.COLUMNS " .
+            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'legend_categories' AND COLUMN_NAME = 'icon'"
+        );
+        $stmt->execute();
+        $dataType = strtolower((string)$stmt->fetchColumn());
+
+        if ($dataType && !in_array($dataType, ['text', 'mediumtext', 'longtext'], true)) {
+            $pdo->exec("ALTER TABLE legend_categories MODIFY icon MEDIUMTEXT NULL");
+        }
+    } catch (PDOException $e) {
+        // Ignore schema migration failures to keep the API available.
+    }
+}
+
 function ensureDatabaseSchema(PDO $pdo)
 {
     ensurePinCoordinates($pdo);
     ensureRouteNameColumn($pdo);
+    ensureRouteDestinationColumn($pdo);
+    ensureRoutePointFloorColumn($pdo);
     ensureAdminDisabledColumn($pdo);
+    ensureLegendIconColumn($pdo);
+    ensureAutoIncrementColumn($pdo, 'maps', 'map_id');
+    ensureAutoIncrementColumn($pdo, 'legend_categories', 'category_id');
     ensureAutoIncrementColumn($pdo, 'pins', 'pin_id');
     ensureAutoIncrementColumn($pdo, 'routes', 'route_id');
     ensureAutoIncrementColumn($pdo, 'route_points', 'id');
@@ -745,10 +862,14 @@ function handleCreateFloor(PDO $pdo, array $data)
 {
     setAdminSession($pdo);
  
-    $name      = sanitizeString($data['name']       ?? '');
-    $imagePath = sanitizeString($data['image_path'] ?? 'maps/default.png');
+    $name         = sanitizeString($data['name'] ?? '');
+    $rawImagePath = trim((string)($data['image_path'] ?? 'maps/default.png'));
+    $imagePath    = preg_match('/^data:image\//i', $rawImagePath)
+        ? saveBase64FloorImage($rawImagePath)
+        : sanitizeString($rawImagePath);
  
     if (!$name) { jsonError(400, 'Floor name is required.'); }
+    if (!$imagePath) { jsonError(400, 'Image path is required.'); }
  
     $stmt = $pdo->prepare("CALL sp_add_map(:name, :image_path)");
     $stmt->execute([':name' => $name, ':image_path' => $imagePath]);
@@ -770,21 +891,33 @@ function handleUpdateFloor(PDO $pdo, string $id, array $data)
     setAdminSession($pdo);
  
     if (!$id) { jsonError(400, 'Floor ID is required.'); }
+    $floorId = (int)$id;
  
-    $name      = sanitizeString($data['name']       ?? '');
-    $imagePath = sanitizeString($data['image_path'] ?? '');
+    $name         = sanitizeString($data['name'] ?? '');
+    $rawImagePath = trim((string)($data['image_path'] ?? ''));
+    $imagePath    = '';
+    if ($rawImagePath !== '') {
+        $imagePath = preg_match('/^data:image\//i', $rawImagePath)
+            ? saveBase64FloorImage($rawImagePath)
+            : sanitizeString($rawImagePath);
+        if (!$imagePath) { jsonError(400, 'Could not save floor image.'); }
+    }
  
     $stmt = $pdo->prepare("CALL sp_update_map(:id, :name, :image_path)");
     $stmt->execute([
-        ':id'         => (int)$id,
+        ':id'         => $floorId,
         ':name'       => $name ?: null,
         ':image_path' => $imagePath ?: null,
     ]);
     $stmt->closeCursor();
 
-    recordAuditLog($pdo, 'MAP_EDIT', 'Updated floor ID: ' . (int)$id . ($name ? ' - ' . $name : ''));
+    recordAuditLog($pdo, 'MAP_EDIT', 'Updated floor ID: ' . $floorId . ($name ? ' - ' . $name : ''));
  
-    jsonSuccess('Floor updated successfully.', ['id' => (int)$id]);
+    jsonSuccess('Floor updated successfully.', [
+        'id'         => $floorId,
+        'name'       => $name,
+        'image_path' => $imagePath,
+    ]);
 }
  
 function handleToggleFloor(PDO $pdo, string $id)
@@ -792,16 +925,17 @@ function handleToggleFloor(PDO $pdo, string $id)
     setAdminSession($pdo);
  
     if (!$id) { jsonError(400, 'Floor ID is required.'); }
+    $floorId = (int)$id;
  
     $stmt = $pdo->prepare("CALL sp_toggle_map_status(:id)");
-    $stmt->execute([':id' => (int)$id]);
+    $stmt->execute([':id' => $floorId]);
     $result = $stmt->fetch();
     $stmt->closeCursor();
 
-    recordAuditLog($pdo, 'MAP_EDIT', 'Changed floor status ID: ' . (int)$id . ' to ' . ($result['new_status'] ?? 'unknown'));
+    recordAuditLog($pdo, 'MAP_EDIT', 'Changed floor status ID: ' . $floorId . ' to ' . ($result['new_status'] ?? 'unknown'));
  
     jsonSuccess($result['message'] ?? 'Status toggled.', [
-        'id'        => (int)$id,
+        'id'        => $floorId,
         'newStatus' => $result['new_status'] ?? 'unknown',
     ]);
 }
@@ -976,20 +1110,22 @@ function handleCreatePin(PDO $pdo, array $data)
     if (!$name)  { jsonError(400, 'Pin name is required.'); }
  
     try {
-        $stmt = $pdo->prepare("CALL sp_add_pin(:map_id, :name, :description, :category_id, :image, :x, :y)");
+        $stmt = $pdo->prepare("CALL sp_add_pin(:map_id, :name, :description, :category_id, :image)");
         $stmt->execute([
             ':map_id'      => $mapId,
             ':name'        => $name,
             ':description' => $desc ?: null,
             ':category_id' => $categoryId,
             ':image'       => $image ?: null,
-            ':x'           => $x,
-            ':y'           => $y,
         ]);
         $result = $stmt->fetch();
         $stmt->closeCursor();
  
         $newPinId = (int)($result['new_pin_id'] ?? 0);
+        if ($newPinId > 0) {
+            $coordStmt = $pdo->prepare("UPDATE pins SET x = :x, y = :y WHERE pin_id = :id");
+            $coordStmt->execute([':x' => $x, ':y' => $y, ':id' => $newPinId]);
+        }
     } catch (PDOException $e) {
         try {
             $stmt = $pdo->prepare(
@@ -1040,17 +1176,25 @@ function handleUpdatePin(PDO $pdo, string $id, array $data)
     $y          = isset($data['y'])               ? (float)$data['y']                 : null;
  
     try {
-        $stmt = $pdo->prepare("CALL sp_update_pin(:id, :name, :description, :category_id, :image, :x, :y)");
+        $stmt = $pdo->prepare("CALL sp_update_pin(:id, :name, :description, :category_id, :image)");
         $stmt->execute([
             ':id'          => (int)$id,
             ':name'        => $name ?: null,
             ':description' => $desc ?: null,
             ':category_id' => $categoryId,
             ':image'       => $image ?: null,
-            ':x'           => $x,
-            ':y'           => $y,
         ]);
         $stmt->closeCursor();
+
+        if ($x !== null || $y !== null) {
+            $coordStmt = $pdo->prepare("
+                UPDATE pins
+                SET x = IFNULL(:x, x),
+                    y = IFNULL(:y, y)
+                WHERE pin_id = :id
+            ");
+            $coordStmt->execute([':id' => (int)$id, ':x' => $x, ':y' => $y]);
+        }
     } catch (PDOException $e) {
         try {
             $stmt = $pdo->prepare(
@@ -1203,6 +1347,7 @@ function handleGetRoutes(PDO $pdo)
                r.to_pin_id   AS to_pin_id,
                r.from_pin_id AS originId,
                r.to_pin_id   AS destinationId,
+               r.destination AS destination,
                r.direction,
                fp.name      AS from_pin_name,
                tp.name      AS to_pin_name,
@@ -1222,7 +1367,7 @@ function handleGetRoutes(PDO $pdo)
  
         // Fetch route points
         $rpStmt = $pdo->prepare("
-            SELECT x, y, point_order
+            SELECT x, y, floor, point_order
             FROM   route_points
             WHERE  route_id = :id
             ORDER  BY point_order ASC
@@ -1293,9 +1438,10 @@ function handleCreateRoute(PDO $pdo, array $data)
         $stmt->closeCursor();
 
         if ($routeId) {
-            $nameStmt = $pdo->prepare("UPDATE routes SET route_name = :route_name WHERE route_id = :id");
+            $nameStmt = $pdo->prepare("UPDATE routes SET route_name = :route_name, destination = :destination WHERE route_id = :id");
             $nameStmt->execute([
                 ':route_name' => $routeName,
+                ':destination' => $destName,
                 ':id'         => $routeId,
             ]);
         }
@@ -1310,7 +1456,16 @@ function handleCreateRoute(PDO $pdo, array $data)
                     ':x'           => (float)($point['x'] ?? 0),
                     ':y'           => (float)($point['y'] ?? 0),
                 ]);
+                $pointResult = $rpStmt->fetch();
                 $rpStmt->closeCursor();
+                $pointId = (int)($pointResult['new_point_id'] ?? 0);
+                if ($pointId > 0) {
+                    $floorStmt = $pdo->prepare("UPDATE route_points SET floor = :floor WHERE id = :id");
+                    $floorStmt->execute([
+                        ':floor' => (int)($point['floor'] ?? $data['floor'] ?? 1),
+                        ':id'    => $pointId,
+                    ]);
+                }
             }
         }
  
@@ -1376,10 +1531,11 @@ function handleUpdateRoute(PDO $pdo, string $id, array $data)
         ]);
         $stmt->closeCursor();
 
-        $nameStmt = $pdo->prepare("UPDATE routes SET route_name = :route_name WHERE route_id = :id");
+        $nameStmt = $pdo->prepare("UPDATE routes SET route_name = :route_name, destination = :destination WHERE route_id = :id");
         $nameStmt->execute([
-            ':route_name' => $routeName,
-            ':id'         => (int)$id,
+            ':route_name'  => $routeName,
+            ':destination' => $destName,
+            ':id'          => (int)$id,
         ]);
  
         // Replace route points
@@ -1395,7 +1551,16 @@ function handleUpdateRoute(PDO $pdo, string $id, array $data)
                     ':x'           => (float)($point['x'] ?? 0),
                     ':y'           => (float)($point['y'] ?? 0),
                 ]);
+                $pointResult = $rpStmt->fetch();
                 $rpStmt->closeCursor();
+                $pointId = (int)($pointResult['new_point_id'] ?? 0);
+                if ($pointId > 0) {
+                    $floorStmt = $pdo->prepare("UPDATE route_points SET floor = :floor WHERE id = :id");
+                    $floorStmt->execute([
+                        ':floor' => (int)($point['floor'] ?? $data['floor'] ?? 1),
+                        ':id'    => $pointId,
+                    ]);
+                }
             }
         }
  
@@ -1475,6 +1640,8 @@ function handleDeleteRoute(PDO $pdo, string $id)
 
 function handleGetArchiveItems(PDO $pdo)
 {
+    ensureLegacyDeletedLegendArchives($pdo);
+
     $stmt = $pdo->query("
         SELECT audit_id, user_id, description, timestamp
         FROM audit_log
@@ -1505,6 +1672,71 @@ function handleGetArchiveItems(PDO $pdo)
     }
 
     jsonResponse(['archive_items' => $items]);
+}
+
+function ensureLegacyDeletedLegendArchives(PDO $pdo)
+{
+    static $checked = false;
+    if ($checked) { return; }
+    $checked = true;
+
+    try {
+        $stmt = $pdo->query("
+            SELECT audit_id, user_id, description, timestamp
+            FROM audit_log
+            WHERE action = 'PIN_UPDATE'
+              AND description LIKE 'Deleted legend category ID:%'
+            ORDER BY audit_id ASC
+        ");
+        $rows = $stmt->fetchAll();
+
+        foreach ($rows as $row) {
+            if (!preg_match('/Deleted legend category ID:\s*(\d+)/i', (string)$row['description'], $match)) {
+                continue;
+            }
+
+            $legendId = (int)$match[1];
+            if ($legendId <= 0) { continue; }
+
+            $exists = $pdo->prepare("
+                SELECT COUNT(*)
+                FROM audit_log
+                WHERE action = 'ARCHIVE_ITEM'
+                  AND description LIKE '%\"type\":\"legend\"%'
+                  AND description LIKE :id_pattern
+            ");
+            $exists->execute([':id_pattern' => '%"id":' . $legendId . '%']);
+            if ((int)$exists->fetchColumn() > 0) {
+                continue;
+            }
+
+            $payload = [
+                'archive'    => true,
+                'type'       => 'legend',
+                'label'      => 'Legend #' . $legendId,
+                'data'       => [
+                    'id'    => $legendId,
+                    'name'  => 'Recovered Legend #' . $legendId,
+                    'color' => '#ff4d4d',
+                    'icon'  => 'MapPin',
+                ],
+                'deleted_at' => $row['timestamp'],
+                'deleted_by' => 'Admin',
+            ];
+
+            $insert = $pdo->prepare("
+                INSERT INTO audit_log (user_id, action, description, timestamp)
+                VALUES (:user_id, 'ARCHIVE_ITEM', :description, :timestamp)
+            ");
+            $insert->execute([
+                ':user_id'     => (int)($row['user_id'] ?? 0),
+                ':description' => json_encode($payload, JSON_UNESCAPED_UNICODE),
+                ':timestamp'   => $row['timestamp'],
+            ]);
+        }
+    } catch (PDOException $e) {
+        // Ignore legacy archive backfill failures to keep the archive page available.
+    }
 }
 
 function markArchiveItemRestored(PDO $pdo, int $auditId)
@@ -1561,6 +1793,9 @@ function handleRestoreArchiveItem(PDO $pdo, array $data)
                 break;
             case 'pin':
                 restoreArchivedPin($pdo, $itemData);
+                break;
+            case 'legend':
+                restoreArchivedLegend($pdo, $itemData);
                 break;
             case 'route':
                 restoreArchivedRoute($pdo, $itemData);
@@ -1642,6 +1877,29 @@ function restoreArchivedPin(PDO $pdo, array $data)
         ':image'       => $data['image'] ?? null,
         ':x'           => isset($data['x']) ? (float)$data['x'] : 50.0,
         ':y'           => isset($data['y']) ? (float)$data['y'] : 50.0,
+    ]);
+}
+
+function restoreArchivedLegend(PDO $pdo, array $data)
+{
+    $id = (int)($data['id'] ?? $data['category_id'] ?? 0);
+    if ($id <= 0) { jsonError(400, 'Archived legend ID is missing.'); }
+
+    $exists = $pdo->prepare("SELECT COUNT(*) FROM legend_categories WHERE category_id = :id");
+    $exists->execute([':id' => $id]);
+    if ((int)$exists->fetchColumn() > 0) {
+        jsonError(409, 'Legend category already exists.');
+    }
+
+    $stmt = $pdo->prepare("
+        INSERT INTO legend_categories (category_id, name, color, icon)
+        VALUES (:id, :name, :color, :icon)
+    ");
+    $stmt->execute([
+        ':id'    => $id,
+        ':name'  => sanitizeString($data['name'] ?? ('Legend #' . $id)),
+        ':color' => sanitizeString($data['color'] ?? '#ff4d4d'),
+        ':icon'  => $data['icon'] ?? null,
     ]);
 }
 
@@ -1739,8 +1997,8 @@ function restoreArchivedPoint(PDO $pdo, array $data)
 
     if ($id > 0) {
         $stmt = $pdo->prepare("
-            INSERT INTO route_points (id, route_id, point_order, x, y)
-            VALUES (:id, :route_id, :point_order, :x, :y)
+            INSERT INTO route_points (id, route_id, point_order, x, y, floor)
+            VALUES (:id, :route_id, :point_order, :x, :y, :floor)
         ");
         $stmt->execute([
             ':id'          => $id,
@@ -1748,19 +2006,21 @@ function restoreArchivedPoint(PDO $pdo, array $data)
             ':point_order' => (int)($data['point_order'] ?? 1),
             ':x'           => (float)($data['x'] ?? 0),
             ':y'           => (float)($data['y'] ?? 0),
+            ':floor'       => isset($data['floor']) ? (int)$data['floor'] : null,
         ]);
         return;
     }
 
     $stmt = $pdo->prepare("
-        INSERT INTO route_points (route_id, point_order, x, y)
-        VALUES (:route_id, :point_order, :x, :y)
+        INSERT INTO route_points (route_id, point_order, x, y, floor)
+        VALUES (:route_id, :point_order, :x, :y, :floor)
     ");
     $stmt->execute([
         ':route_id'    => $routeId,
         ':point_order' => (int)($data['point_order'] ?? 1),
         ':x'           => (float)($data['x'] ?? 0),
         ':y'           => (float)($data['y'] ?? 0),
+        ':floor'       => isset($data['floor']) ? (int)$data['floor'] : null,
     ]);
 }
  
@@ -1801,19 +2061,36 @@ function handleCreateLegend(PDO $pdo, array $data)
         jsonError(400, 'Invalid color format. Must be a hex color (e.g. #3498DB).');
     }
  
-    $stmt = $pdo->prepare("CALL sp_add_legend_category(:name, :color, :icon)");
-    $stmt->execute([
-        ':name'  => $name,
-        ':color' => $color,
-        ':icon'  => $icon ?: null,
-    ]);
-    $result = $stmt->fetch();
-    $stmt->closeCursor();
+    try {
+        if (strlen($icon) > 255) {
+            throw new PDOException('Legend icon is longer than procedure parameter.');
+        }
+        $stmt = $pdo->prepare("CALL sp_add_legend_category(:name, :color, :icon)");
+        $stmt->execute([
+            ':name'  => $name,
+            ':color' => $color,
+            ':icon'  => $icon ?: null,
+        ]);
+        $result = $stmt->fetch();
+        $stmt->closeCursor();
+        $newCategoryId = (int)($result['new_category_id'] ?? 0);
+    } catch (PDOException $e) {
+        $stmt = $pdo->prepare("
+            INSERT INTO legend_categories (name, color, icon)
+            VALUES (:name, :color, :icon)
+        ");
+        $stmt->execute([
+            ':name'  => $name,
+            ':color' => $color,
+            ':icon'  => $icon ?: null,
+        ]);
+        $newCategoryId = (int)$pdo->lastInsertId();
+    }
 
     recordAuditLog($pdo, 'PIN_UPDATE', 'Created legend category: ' . $name);
  
     jsonSuccess('Legend category added successfully.', [
-        'id'    => (int)($result['new_category_id'] ?? 0),
+        'id'    => $newCategoryId,
         'name'  => $name,
         'color' => $color,
         'icon'  => $icon,
@@ -1825,6 +2102,7 @@ function handleUpdateLegend(PDO $pdo, string $id, array $data)
     setAdminSession($pdo);
  
     if (!$id) { jsonError(400, 'Legend ID is required.'); }
+    $legendId = (int)$id;
  
     $name  = sanitizeString($data['name']  ?? '');
     $color = sanitizeString($data['color'] ?? '');
@@ -1834,18 +2112,37 @@ function handleUpdateLegend(PDO $pdo, string $id, array $data)
         jsonError(400, 'Invalid color format. Must be a hex color.');
     }
  
-    $stmt = $pdo->prepare("CALL sp_update_legend_category(:id, :name, :color, :icon)");
-    $stmt->execute([
-        ':id'    => (int)$id,
-        ':name'  => $name  ?: null,
-        ':color' => $color ?: null,
-        ':icon'  => $icon  ?: null,
-    ]);
-    $stmt->closeCursor();
+    try {
+        if (strlen($icon) > 255) {
+            throw new PDOException('Legend icon is longer than procedure parameter.');
+        }
+        $stmt = $pdo->prepare("CALL sp_update_legend_category(:id, :name, :color, :icon)");
+        $stmt->execute([
+            ':id'    => $legendId,
+            ':name'  => $name  ?: null,
+            ':color' => $color ?: null,
+            ':icon'  => $icon  ?: null,
+        ]);
+        $stmt->closeCursor();
+    } catch (PDOException $e) {
+        $stmt = $pdo->prepare("
+            UPDATE legend_categories
+            SET name = COALESCE(:name, name),
+                color = COALESCE(:color, color),
+                icon = COALESCE(:icon, icon)
+            WHERE category_id = :id
+        ");
+        $stmt->execute([
+            ':id'    => $legendId,
+            ':name'  => $name  ?: null,
+            ':color' => $color ?: null,
+            ':icon'  => $icon  ?: null,
+        ]);
+    }
 
-    recordAuditLog($pdo, 'PIN_UPDATE', 'Updated legend category ID: ' . (int)$id . ($name ? ' - ' . $name : ''));
+    recordAuditLog($pdo, 'PIN_UPDATE', 'Updated legend category ID: ' . $legendId . ($name ? ' - ' . $name : ''));
  
-    jsonSuccess('Legend updated successfully.', ['id' => (int)$id]);
+    jsonSuccess('Legend updated successfully.', ['id' => $legendId]);
 }
  
 function handleDeleteLegend(PDO $pdo, string $id)
@@ -1853,12 +2150,27 @@ function handleDeleteLegend(PDO $pdo, string $id)
     setAdminSession($pdo);
  
     if (!$id) { jsonError(400, 'Legend ID is required.'); }
+    $legendId = (int)$id;
  
     try {
+        $legendStmt = $pdo->prepare("
+            SELECT category_id AS id, name, color, icon
+            FROM legend_categories
+            WHERE category_id = :id
+            LIMIT 1
+        ");
+        $legendStmt->execute([':id' => $legendId]);
+        $legend = $legendStmt->fetch();
+        if (!$legend) {
+            jsonError(404, 'Legend category not found or already deleted.');
+        }
+
+        archiveDeletedItem($pdo, 'legend', $legend['name'] ?: ('Legend #' . $legendId), $legend);
+
         $stmt = $pdo->prepare("CALL sp_delete_legend_category(:id)");
-        $stmt->execute([':id' => (int)$id]);
+        $stmt->execute([':id' => $legendId]);
         $stmt->closeCursor();
-        recordAuditLog($pdo, 'PIN_UPDATE', 'Deleted legend category ID: ' . (int)$id);
+        recordAuditLog($pdo, 'PIN_UPDATE', 'Deleted legend category ID: ' . $legendId);
         jsonSuccess('Legend deleted successfully.');
     } catch (PDOException $e) {
         jsonError(400, 'Failed to delete legend: ' . $e->getMessage());

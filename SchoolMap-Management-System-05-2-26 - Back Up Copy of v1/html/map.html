@@ -33,6 +33,7 @@
           ><span></span><span></span><span></span
         ></span>
       </div>
+
       <div
         id="map-exit-banner"
         class="map-entry-banner map-exit-banner"
@@ -46,6 +47,7 @@
           ><span></span><span></span><span></span
         ></span>
       </div>
+
       <!-- MAP HEADER -->
       <header class="map-header">
         <div class="map-header-top">
@@ -72,6 +74,7 @@
             </div>
             <span class="logo-text map-logo-text">SchoolMap</span>
           </button>
+
           <div class="map-search-wrapper">
             <svg
               class="search-icon"
@@ -99,10 +102,13 @@
               style="display: none"
             ></div>
           </div>
+
           <div class="map-tagline">Your campus, clearly mapped ✏</div>
+
           <div class="map-user-area" id="map-user-area">
             <!-- Populated by JS -->
           </div>
+
           <button
             class="mobile-menu-btn map-sidebar-toggle"
             onclick="toggleMapSidebar()"
@@ -122,6 +128,7 @@
             </svg>
           </button>
         </div>
+
         <!-- Route Finder Sub-header -->
         <div class="map-route-bar">
           <span class="route-label">📍 Find Your Way:</span>
@@ -216,6 +223,7 @@
             </div>
             <div id="floor-buttons" class="floor-buttons"></div>
           </div>
+
           <!-- Legend -->
           <div class="sidebar-section" style="flex: 1">
             <div
@@ -249,6 +257,7 @@
             </div>
             <div id="legend-items" class="legend-items"></div>
           </div>
+
           <!-- Show Labels Toggle -->
           <div class="sidebar-section sidebar-bottom">
             <label class="toggle-label">
@@ -273,6 +282,7 @@
                 <div class="route-points-layer" id="routePointsLayer"></div>
                 <div class="route-walker-layer" id="routeWalkerLayer"></div>
                 <img class="floor-image" id="floorImage" alt="" hidden />
+
                 <div class="empty-state" id="emptyState">
                   <svg
                     width="42"
@@ -290,55 +300,109 @@
                   </svg>
                   <p id="emptyStateText"></p>
                 </div>
+
                 <div class="pins-layer" id="pinsLayer"></div>
               </div>
+
               <div class="pin-tooltip" id="pinTooltip"></div>
-            </div>
-          </div>
 
-          <!-- Restart Route Button (Left Side, Top) -->
-          <button
-            class="map-side-btn map-side-btn-restart"
-            onclick="showRestartRouteConfirm()"
-            title="Restart route and show all pins"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="28"
-              height="28"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <polyline points="23 4 23 10 17 10" />
-              <polyline points="1 20 1 14 7 14" />
-              <path
-                d="M3.51 9a9 9 0 0 1 14.85-3.36M20.49 15a9 9 0 0 1-14.85 3.36"
-              />
-            </svg>
-          </button>
-
-          <div id="restart-route-confirm" class="route-confirm-panel" hidden>
-            <div class="route-confirm-card">
-              <p>Are you sure you want to restart the route?</p>
-              <div class="route-confirm-actions">
+              <!-- Route Buttons: Top-left inside mapStage -->
+              <div class="map-side-route-tools">
                 <button
                   type="button"
-                  class="info-action-btn info-action-btn-secondary"
-                  onclick="hideRestartRouteConfirm()"
+                  class="map-side-btn map-side-btn-restart"
+                  onclick="showRestartRouteConfirm()"
+                  title="Restart route and restore all pins"
+                  aria-label="Restart route and restore all pins"
                 >
-                  Cancel
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="28"
+                    height="28"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <polyline points="23 4 23 10 17 10" />
+                    <polyline points="1 20 1 14 7 14" />
+                    <path
+                      d="M3.51 9a9 9 0 0 1 14.85-3.36M20.49 15a9 9 0 0 1-14.85 3.36"
+                    />
+                  </svg>
                 </button>
+
                 <button
                   type="button"
-                  class="info-action-btn info-action-btn-primary"
-                  onclick="confirmRestartRoute()"
+                  class="map-side-btn map-side-btn-run"
+                  onclick="runPublicRoute()"
+                  title="Run route"
+                  aria-label="Run route"
                 >
-                  Restart
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="28"
+                    height="28"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.3"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <polygon points="8 5 19 12 8 19 8 5" />
+                  </svg>
                 </button>
+
+                <button
+                  type="button"
+                  class="map-side-btn map-side-btn-line-preview"
+                  onclick="previewPublicRouteLine()"
+                  title="Line preview"
+                  aria-label="Line preview"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="28"
+                    height="28"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.3"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="M4 18c2.5-8 5.5-12 9-12 2.7 0 4.4 2 7 6" />
+                    <circle cx="4" cy="18" r="2" />
+                    <circle cx="13" cy="6" r="2" />
+                    <circle cx="20" cy="12" r="2" />
+                  </svg>
+                </button>
+              </div>
+
+              <!-- Restart Route Confirmation Panel -->
+              <div id="restart-route-confirm" class="route-confirm-panel" hidden>
+                <div class="route-confirm-card">
+                  <p>Are you sure you want to restart the route?</p>
+                  <div class="route-confirm-actions">
+                    <button
+                      type="button"
+                      class="info-action-btn info-action-btn-secondary"
+                      onclick="hideRestartRouteConfirm()"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      class="info-action-btn info-action-btn-primary"
+                      onclick="confirmRestartRoute()"
+                    >
+                      Restart
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -362,7 +426,9 @@
                   <line x1="8" y1="11" x2="14" y2="11" />
                 </svg>
               </button>
+
               <span class="zoom-label" id="zoomLabel">100%</span>
+
               <button class="zoom-btn" onclick="changeZoom(-0.2)">
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
@@ -378,9 +444,11 @@
                   <line x1="8" y1="11" x2="14" y2="11" />
                 </svg>
               </button>
+
               <button class="zoom-btn zoom-reset" onclick="resetZoom()">
                 1x
               </button>
+
               <button
                 class="zoom-btn"
                 onclick="restoreMap()"
@@ -454,10 +522,11 @@
       <div class="user-dropdown-name" id="user-dropdown-name"></div>
       <div class="user-dropdown-role" id="user-dropdown-role"></div>
       <hr style="border-color: #2d2d2d22; margin: 4px 0" />
+
       <button
         id="user-dropdown-admin"
         class="user-dropdown-item"
-        onclick="verifyAdminAccess()"
+        onclick="event.stopPropagation(); verifyAdminAccess()"
         style="display: none"
       >
         <svg
@@ -476,10 +545,11 @@
         </svg>
         Go to Map Editor
       </button>
+
       <button
         id="user-dropdown-super-admin"
         class="user-dropdown-item"
-        onclick="goToSuperAdminDashboard()"
+        onclick="event.stopPropagation(); goToSuperAdminDashboard()"
         style="display: none"
       >
         <svg
@@ -495,6 +565,7 @@
         </svg>
         Go to Super Admin Dashboard
       </button>
+
       <button
         class="user-dropdown-item user-dropdown-logout"
         onclick="handleLogout()"
@@ -517,26 +588,57 @@
     </div>
 
     <!-- Admin Access Modal -->
-    <div id="adminVerifyModal" class="modal-overlay" style="display: none">
-      <div class="confirm-card">
-        <h2>Admin access required</h2>
-        <p>
-          Only the authorized administrator may open the admin panel. Press
-          continue to proceed.
-        </p>
-        <div class="confirm-actions">
+    <div
+      id="adminVerifyModal"
+      class="admin-loading-overlay admin-loading-overlay-dark"
+      style="display: none"
+    >
+      <div class="admin-loading-card verification-card">
+        <h2 id="admin-loading-text">Administrator confirmation</h2>
+
+        <div id="verifyStep1" class="verification-step">
+          <p class="verification-instruction">
+            Complete both checks to continue into the admin panel.
+          </p>
+
+          <div class="verification-checkbox">
+            <input type="checkbox" id="confirmAdmin" />
+            <label for="confirmAdmin">
+              I confirm I am the authorized SchoolMap administrator.
+            </label>
+          </div>
+
+          <div class="verification-checkbox">
+            <input type="checkbox" id="confirmResponsibility" />
+            <label for="confirmResponsibility">
+              I understand edits are permanent and will proceed carefully.
+            </label>
+          </div>
+
           <button
-            class="wobbly-btn wobbly-btn-secondary"
-            onclick="closeAdminVerifyModal()"
+            class="btn btn-primary verification-button"
+            id="verificationContinueBtn"
+            disabled
           >
-            Cancel
+            Proceed to slide verification
           </button>
-          <button
-            class="wobbly-btn wobbly-btn-primary"
-            onclick="proceedToAdminPanel()"
-          >
-            Continue
-          </button>
+        </div>
+
+        <div id="verifyStep2" class="verification-step" style="display: none">
+          <p class="verification-instruction">
+            Drag the handle all the way to confirm your access.
+          </p>
+
+          <div class="verification-track" id="verificationTrack">
+            <div class="verification-text" id="verificationText">
+              Slide to confirm
+            </div>
+            <div class="verification-handle" id="verificationHandle">↔</div>
+          </div>
+
+          <p class="verification-note">
+            This verification appears once before admin edit mode.
+          </p>
         </div>
       </div>
     </div>
@@ -658,6 +760,7 @@
         </div>
       </div>
     </div>
+
     <!-- Guest Logout Confirmation Modal -->
     <div id="guest-logout-modal" class="modal-overlay" style="display: none">
       <div class="confirm-card" style="max-width: 380px">

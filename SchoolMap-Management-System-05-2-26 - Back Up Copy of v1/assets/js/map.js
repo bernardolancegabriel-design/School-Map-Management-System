@@ -12,6 +12,7 @@ const MAP_GUEST_FLOW_KEY = "schoolmap_guest_flow_active";
 let guestBackHistoryGuardActive = false;
 let activeGuestLogSavePromise = null;
 let pendingGuestTimeOut = "";
+let publicRoutePreviewTimer = null;
 
 document.addEventListener("DOMContentLoaded", function () {
   initMapPage();
@@ -505,23 +506,163 @@ function handleGlobalClick(event) {
 /* ====================== ADMIN ACCESS ====================== */
 
 function verifyAdminAccess() {
-  var user = getCurrentUser();
+  var user =
+    typeof getCurrentUser === "function"
+      ? getCurrentUser()
+      : loadCurrentUser();
+
   if (!isAdminUser(user)) {
     showToast("Admin access requires signing in as Administrator.");
     navigate("login");
     return;
   }
+
   var modal = document.getElementById("adminVerifyModal");
   if (!modal) {
     window.location.href = "admin-dashboard.html";
     return;
   }
-  modal.style.display = "";
+
+  closeUserMenu();
+
+  // IMPORTANT: initialize muna bago ipakita
+  initializeAdminVerifyModal();
+
+  // IMPORTANT: flex dapat para visible yung overlay
+  modal.style.display = "flex";
 }
 
 function closeAdminVerifyModal() {
   var modal = document.getElementById("adminVerifyModal");
   if (modal) modal.style.display = "none";
+}
+
+function initializeAdminVerifyModal() {
+  var modal = document.getElementById("adminVerifyModal");
+  if (!modal) return;
+
+  var step1 = document.getElementById("verifyStep1");
+  var step2 = document.getElementById("verifyStep2");
+  var checkbox1 = document.getElementById("confirmAdmin");
+  var checkbox2 = document.getElementById("confirmResponsibility");
+  var continueBtn = document.getElementById("verificationContinueBtn");
+
+  if (!step1 || !step2 || !checkbox1 || !checkbox2 || !continueBtn) return;
+
+  modal.onclick = function (event) {
+    event.stopPropagation();
+  };
+
+  step1.style.display = "";
+  step2.style.display = "none";
+  checkbox1.checked = false;
+  checkbox2.checked = false;
+  continueBtn.disabled = true;
+  continueBtn.textContent = "Proceed to slide verification";
+
+  // Remove any existing listeners to avoid duplicates
+  checkbox1.removeEventListener("change", updateVerificationContinueState);
+  checkbox2.removeEventListener("change", updateVerificationContinueState);
+  
+  // Add event listeners using addEventListener for better reliability
+  checkbox1.addEventListener("change", updateVerificationContinueState);
+  checkbox2.addEventListener("change", updateVerificationContinueState);
+  
+  // Update button state immediately
+  updateVerificationContinueState();
+
+  continueBtn.onclick = function (event) {
+  event.preventDefault();
+  event.stopPropagation();
+
+  if (!checkbox1.checked || !checkbox2.checked) {
+    showToast("Please check both confirmations first.");
+    return;
+  }
+
+  step1.style.display = "none";
+  step2.style.display = "";
+  setupSlideVerificationModal();
+};
+}
+
+function updateVerificationContinueState() {
+  var continueBtn = document.getElementById("verificationContinueBtn");
+  var checkbox1 = document.getElementById("confirmAdmin");
+  var checkbox2 = document.getElementById("confirmResponsibility");
+  if (!continueBtn || !checkbox1 || !checkbox2) return;
+  continueBtn.disabled = !(checkbox1.checked && checkbox2.checked);
+}
+
+function setupSlideVerificationModal() {
+  var handle = document.getElementById("verificationHandle");
+  var track = document.getElementById("verificationTrack");
+  var text = document.getElementById("verificationText");
+  if (!handle || !track || !text) return;
+
+  var trackRect = null;
+  var dragging = false;
+  var startX = 0;
+  var handleLeft = 0;
+  var threshold = 0;
+
+  function resetHandle() {
+    handle.style.left = "0px";
+    text.textContent = "Slide to confirm";
+    track.classList.remove("verification-success");
+  }
+
+  function completeVerification() {
+    track.classList.add("verification-success");
+    text.textContent = "Verified";
+    sessionStorage.setItem("schoolmap_admin_verified", "1");
+    localStorage.setItem("schoolmap_admin_verified", "1");
+    setTimeout(function () {
+      closeAdminVerifyModal();
+      window.location.href = "admin-dashboard.html";
+    }, 250);
+  }
+
+  function onPointerMove(event) {
+    if (!dragging) return;
+    var clientX = event.type.indexOf("touch") === 0 ? event.touches[0].clientX : event.clientX;
+    var delta = clientX - startX;
+    var nextLeft = Math.min(Math.max(handleLeft + delta, 0), threshold);
+    handle.style.left = nextLeft + "px";
+    if (nextLeft >= threshold) {
+      dragging = false;
+      completeVerification();
+    }
+  }
+
+  function onPointerUp() {
+    if (!dragging) return;
+    dragging = false;
+    resetHandle();
+    window.removeEventListener("mousemove", onPointerMove);
+    window.removeEventListener("touchmove", onPointerMove);
+    window.removeEventListener("mouseup", onPointerUp);
+    window.removeEventListener("touchend", onPointerUp);
+    window.removeEventListener("touchcancel", onPointerUp);
+  }
+
+  function onPointerDown(event) {
+    event.preventDefault();
+    dragging = true;
+    trackRect = track.getBoundingClientRect();
+    threshold = trackRect.width - handle.offsetWidth - 4;
+    startX = event.type.indexOf("touch") === 0 ? event.touches[0].clientX : event.clientX;
+    handleLeft = parseInt(handle.style.left || 0, 10);
+    window.addEventListener("mousemove", onPointerMove);
+    window.addEventListener("touchmove", onPointerMove, { passive: false });
+    window.addEventListener("mouseup", onPointerUp);
+    window.addEventListener("touchend", onPointerUp);
+    window.addEventListener("touchcancel", onPointerUp);
+  }
+
+  resetHandle();
+  handle.onmousedown = onPointerDown;
+  handle.ontouchstart = onPointerDown;
 }
 
 function proceedToAdminPanel() {
@@ -1438,6 +1579,8 @@ function populateRouteSelects() {
 }
 
 function handleRouteChange() {
+  stopPublicRoutePreview(false, false);
+
   var fromSel = document.getElementById("route-from");
   var toSel = document.getElementById("route-to");
   AppState.routeFrom = fromSel ? fromSel.value : "";
@@ -1513,9 +1656,23 @@ function showRoute() {
   hidePinTooltip();
   renderPins();
   renderRouteOverlay();
+
+  showPublicRouteActionToast("Route shown");
+}
+
+function showPublicRouteActionToast(actionLabel) {
+  var fromLoc = getLocationById(AppState.routeFrom);
+  var toLoc = getLocationById(AppState.routeTo);
+
+  var fromName = fromLoc ? fromLoc.name : "Start";
+  var toName = toLoc ? toLoc.name : "Destination";
+
+  showToast(actionLabel + ": " + fromName + " → " + toName);
 }
 
 function resetRoute() {
+  hideRestartRouteConfirm();
+  stopPublicRoutePreview(false, false);
   hideRestartRouteConfirm();
 
   // Clear route state
@@ -1651,33 +1808,350 @@ function getRouteSegments(points) {
   return segments;
 }
 
-function clearPublicRouteOverlay() {
+function clearPublicRouteOverlay(options) {
+  options = options || {};
+
   var svg = document.getElementById("routeEditorSvg");
   var pointsLayer = document.getElementById("routePointsLayer");
   var walkerLayer = document.getElementById("routeWalkerLayer");
+
   if (svg) {
     svg.innerHTML = "";
     svg.style.display = "none";
   }
+
   if (pointsLayer) {
     pointsLayer.innerHTML = "";
     pointsLayer.style.display = "none";
   }
-  if (walkerLayer) {
+
+  if (walkerLayer && !options.keepWalker) {
     walkerLayer.innerHTML = "";
     walkerLayer.style.display = "none";
+  } else if (walkerLayer) {
+    walkerLayer.style.display = "block";
   }
+}
+function stopPublicRoutePreview(restoreFloor, shouldRender) {
+  window.clearInterval(publicRoutePreviewTimer);
+  window.clearTimeout(publicRoutePreviewTimer);
+  publicRoutePreviewTimer = null;
+
+  var backupFloor = AppState.publicRoutePreviewFloorBackup;
+
+  AppState.publicRoutePreviewing = false;
+  AppState.publicRoutePreviewMode = null;
+  AppState.publicRoutePreviewPoints = [];
+  AppState.publicRoutePreviewStep = 0;
+  AppState.publicRoutePreviewProgress = 0;
+  AppState.publicRoutePreviewFacing = 1;
+  AppState.publicRoutePreviewFloorBackup = null;
+
+  if (restoreFloor && backupFloor != null) {
+    AppState.currentFloor = backupFloor;
+  }
+
+  if (shouldRender !== false) {
+    renderFloorButtons();
+    renderMapCanvas();
+    renderPins();
+    renderRouteOverlay();
+  }
+}
+
+function getPublicRoutePreviewData(displayPoints) {
+  if (!AppState.publicRoutePreviewing || !Array.isArray(displayPoints)) {
+    return null;
+  }
+
+  var step = Number(AppState.publicRoutePreviewStep || 0);
+  var progress = Math.max(
+    0,
+    Math.min(1, Number(AppState.publicRoutePreviewProgress || 0)),
+  );
+
+  var currentPoint = displayPoints[step];
+  var nextPoint = displayPoints[step + 1];
+
+  if (!currentPoint || !nextPoint) {
+    return null;
+  }
+
+  var easedProgress = progress * progress * (3 - 2 * progress);
+  var visiblePoints = displayPoints.slice(0, step + 1);
+  var walkerPoint = currentPoint;
+
+  if (String(currentPoint.floor) === String(nextPoint.floor)) {
+    walkerPoint = {
+      x: currentPoint.x + (nextPoint.x - currentPoint.x) * easedProgress,
+      y: currentPoint.y + (nextPoint.y - currentPoint.y) * easedProgress,
+      floor: currentPoint.floor,
+      type: "walker",
+    };
+
+    if (progress > 0 && progress < 1) {
+      visiblePoints.push(walkerPoint);
+    } else if (progress >= 1) {
+      visiblePoints.push(nextPoint);
+    }
+  }
+
+  return {
+    points: visiblePoints,
+    walkerPoint: walkerPoint,
+    currentPoint: currentPoint,
+    nextPoint: nextPoint,
+  };
+}
+
+function renderPublicRouteWalker(layer, point, currentPoint, nextPoint) {
+  if (!layer || !point) return;
+
+  layer.style.display = "block";
+
+  if (
+    currentPoint &&
+    nextPoint &&
+    String(currentPoint.floor) === String(nextPoint.floor)
+  ) {
+    var dx = Number(nextPoint.x) - Number(currentPoint.x);
+
+    if (Math.abs(dx) > 0.25) {
+      AppState.publicRoutePreviewFacing = dx < 0 ? -1 : 1;
+    }
+  }
+
+  var walker = layer.querySelector(".route-walker");
+
+  if (!walker) {
+    walker = document.createElement("div");
+    walker.className = "route-walker";
+
+    var media = document.createElement("video");
+    media.className = "route-walker-media";
+    media.src = "../images/walking-icon.webm";
+    media.autoplay = true;
+    media.loop = true;
+    media.muted = true;
+    media.playsInline = true;
+    media.setAttribute("playsinline", "");
+    media.setAttribute("aria-hidden", "true");
+
+    var fallback = document.createElement("span");
+    fallback.className = "route-walker-fallback";
+    fallback.textContent = "🚶";
+
+    /* Default muna: show fallback para sure may makikita */
+    media.style.display = "none";
+    fallback.style.display = "flex";
+
+    media.addEventListener("loadeddata", function () {
+      media.style.display = "block";
+      fallback.style.display = "none";
+
+      media.play().catch(function () {
+        media.style.display = "none";
+        fallback.style.display = "flex";
+      });
+    });
+
+    media.addEventListener("error", function () {
+      media.style.display = "none";
+      fallback.style.display = "flex";
+    });
+
+    walker.appendChild(media);
+    walker.appendChild(fallback);
+    layer.appendChild(walker);
+  }
+
+  walker.style.left = point.x + "%";
+  walker.style.top = point.y + "%";
+  walker.style.transform =
+    "translate(-50%, -100%) scaleX(" +
+    (AppState.publicRoutePreviewFacing || 1) +
+    ")";
+}
+
+function updatePublicRouteWalkerOnly() {
+  var walkerLayer = document.getElementById("routeWalkerLayer");
+  if (!walkerLayer) return;
+
+  var points = AppState.publicRoutePreviewPoints || [];
+  var step = Number(AppState.publicRoutePreviewStep || 0);
+  var progress = Math.max(
+    0,
+    Math.min(1, Number(AppState.publicRoutePreviewProgress || 0)),
+  );
+
+  var currentPoint = points[step];
+  var nextPoint = points[step + 1];
+
+  if (!currentPoint || !nextPoint) {
+    walkerLayer.innerHTML = "";
+    walkerLayer.style.display = "none";
+    return;
+  }
+
+  if (String(currentPoint.floor) !== String(AppState.currentFloor)) {
+    walkerLayer.innerHTML = "";
+    walkerLayer.style.display = "none";
+    return;
+  }
+
+  var walkerPoint = currentPoint;
+
+  if (String(currentPoint.floor) === String(nextPoint.floor)) {
+    var easedProgress = progress * progress * (3 - 2 * progress);
+
+    walkerPoint = {
+      x: currentPoint.x + (nextPoint.x - currentPoint.x) * easedProgress,
+      y: currentPoint.y + (nextPoint.y - currentPoint.y) * easedProgress,
+      floor: currentPoint.floor,
+      type: "walker",
+    };
+  }
+
+  renderPublicRouteWalker(walkerLayer, walkerPoint, currentPoint, nextPoint);
+}
+
+function startPublicRoutePreview(mode) {
+  if (!AppState.routeFrom || !AppState.routeTo) {
+    showToast("Select a start and destination first.");
+    return;
+  }
+
+  var routeMatch = findSavedRoute(AppState.routeFrom, AppState.routeTo);
+
+  if (!routeMatch || !routeMatch.route || !routeMatch.route.points.length) {
+    AppState.showRoute = false;
+    clearPublicRouteOverlay();
+    renderPins();
+    showToast("No saved route path found for these pins.");
+    return;
+  }
+
+  stopPublicRoutePreview(false, false);
+
+  AppState.activeRoute = routeMatch.route;
+  AppState.activeRouteReversed = routeMatch.reversed;
+  AppState.showRoute = true;
+
+  var previewPoints = getRouteDisplayPoints(
+    routeMatch.route,
+    routeMatch.reversed,
+  );
+
+  if (!previewPoints || previewPoints.length < 2) {
+    showToast("No route points to preview.");
+    return;
+  }
+
+  AppState.publicRoutePreviewing = true;
+  AppState.publicRoutePreviewMode = mode;
+  AppState.publicRoutePreviewPoints = previewPoints;
+  AppState.publicRoutePreviewStep = 0;
+  AppState.publicRoutePreviewProgress = 0;
+  AppState.publicRoutePreviewFacing = 1;
+  AppState.publicRoutePreviewFloorBackup = AppState.currentFloor;
+
+  AppState.currentFloor = previewPoints[0].floor;
+
+  closeSelectedPanel();
+  hidePinTooltip();
+
+  renderFloorButtons();
+  renderMapCanvas();
+  renderPins();
+  renderRouteOverlay();
+
+  showPublicRouteActionToast(
+  mode === "run" ? "Run route started" : "Line preview started",
+  );
+
+  publicRoutePreviewTimer = window.setInterval(function () {
+    if (!AppState.publicRoutePreviewing) return;
+
+    var points = AppState.publicRoutePreviewPoints || [];
+    var step = Number(AppState.publicRoutePreviewStep || 0);
+    var currentPoint = points[step];
+    var nextPoint = points[step + 1];
+
+    if (!currentPoint || !nextPoint) {
+      stopPublicRoutePreview(true, true);
+      return;
+    }
+
+    var sameFloor = String(currentPoint.floor) === String(nextPoint.floor);
+
+    if (!sameFloor) {
+      AppState.publicRoutePreviewProgress = 1;
+    } else {
+      AppState.publicRoutePreviewProgress = Math.min(
+        Number(AppState.publicRoutePreviewProgress || 0) + 0.016,
+        1,
+      );
+    }
+
+    /*
+      IMPORTANT:
+      Both run and line preview should rebuild the visible line.
+      Run = walking icon
+      Line preview = blue dot
+    */
+    if (AppState.publicRoutePreviewProgress < 1) {
+      renderRouteOverlay();
+      return;
+    }
+
+    AppState.publicRoutePreviewProgress = 0;
+    AppState.publicRoutePreviewStep = step + 1;
+
+    var nextPreviewPoint = points[AppState.publicRoutePreviewStep];
+
+    if (nextPreviewPoint && nextPreviewPoint.floor != null) {
+      var changedFloor =
+        String(AppState.currentFloor) !== String(nextPreviewPoint.floor);
+
+      AppState.currentFloor = nextPreviewPoint.floor;
+
+      if (changedFloor) {
+        renderFloorButtons();
+        renderMapCanvas();
+        renderPins();
+      }
+
+      renderRouteOverlay();
+    }
+
+    if (AppState.publicRoutePreviewStep >= points.length - 1) {
+      stopPublicRoutePreview(true, true);
+    }
+  }, 40);
+}
+
+function runPublicRoute() {
+  startPublicRoutePreview("run");
+}
+
+function previewPublicRouteLine() {
+  startPublicRoutePreview("line");
 }
 
 function renderRouteOverlay() {
   var svg = document.getElementById("routeEditorSvg");
   var pointsLayer = document.getElementById("routePointsLayer");
   var walkerLayer = document.getElementById("routeWalkerLayer");
+
   if (!svg || !pointsLayer || !walkerLayer) {
     return;
   }
 
-  clearPublicRouteOverlay();
+  clearPublicRouteOverlay({
+    keepWalker:
+      AppState.publicRoutePreviewing &&
+      AppState.publicRoutePreviewMode === "run",
+  });
 
   if (!AppState.showRoute || !AppState.routeFrom || !AppState.routeTo) {
     return;
@@ -1685,6 +2159,7 @@ function renderRouteOverlay() {
 
   var match = findSavedRoute(AppState.routeFrom, AppState.routeTo);
   var route = match ? match.route : null;
+
   if (match) {
     AppState.activeRoute = match.route;
     AppState.activeRouteReversed = match.reversed;
@@ -1694,10 +2169,24 @@ function renderRouteOverlay() {
     return;
   }
 
-  var displayPoints = getRouteDisplayPoints(
+  var fullDisplayPoints = getRouteDisplayPoints(
     route,
     !!AppState.activeRouteReversed,
   );
+
+  var displayPoints = fullDisplayPoints;
+  var previewData = getPublicRoutePreviewData(fullDisplayPoints);
+  var walkerPoint = null;
+  var currentPoint = null;
+  var nextPoint = null;
+
+  if (previewData && AppState.publicRoutePreviewing) {
+    displayPoints = previewData.points;
+    walkerPoint = previewData.walkerPoint;
+    currentPoint = previewData.currentPoint;
+    nextPoint = previewData.nextPoint;
+  }
+
   var segments = getRouteSegments(displayPoints).filter(function (segment) {
     return (
       segment.sameFloor &&
@@ -1705,7 +2194,7 @@ function renderRouteOverlay() {
     );
   });
 
-  if (!segments.length) {
+  if (!segments.length && !walkerPoint) {
     return;
   }
 
@@ -1713,15 +2202,24 @@ function renderRouteOverlay() {
   var colorMap = getColorMap();
   var routeColor = fromLoc
     ? colorMap[getLocationType(fromLoc)] || "#2d5da1"
-    : "#2d5da1";
+    : "#192a57";
+
+  var isLinePreview =
+    AppState.publicRoutePreviewing &&
+    AppState.publicRoutePreviewMode === "line";
+
+  var isRunPreview =
+    AppState.publicRoutePreviewing &&
+    AppState.publicRoutePreviewMode === "run";
 
   svg.style.display = "block";
   svg.setAttribute("viewBox", "0 0 100 100");
   svg.setAttribute("preserveAspectRatio", "none");
   pointsLayer.style.display = "block";
 
-  segments.forEach(function (segment) {
+  segments.forEach(function (segment, index) {
     var line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+
     line.setAttribute("x1", String(segment.start.x));
     line.setAttribute("y1", String(segment.start.y));
     line.setAttribute("x2", String(segment.end.x));
@@ -1732,25 +2230,71 @@ function renderRouteOverlay() {
     line.setAttribute("stroke-linejoin", "round");
     line.setAttribute("stroke-opacity", "0.95");
     line.classList.add("route-line", "route-line-public");
+
+    if (AppState.publicRoutePreviewing) {
+      line.classList.add("route-line-building");
+    }
+
+    if (isLinePreview) {
+      line.classList.add("route-line-preview");
+      line.classList.add("route-line-preview-dashed");
+      line.setAttribute("stroke-dasharray", "4 5");
+      line.style.animationDelay = index * 0.12 + "s";
+    }
+
     svg.appendChild(line);
   });
 
-  renderRouteEndpointDot(pointsLayer, displayPoints[0], "route-endpoint-start");
-  renderRouteEndpointDot(
-    pointsLayer,
-    displayPoints[displayPoints.length - 1],
-    "route-endpoint-finish",
-  );
+  renderRouteEndpointDot(pointsLayer, fullDisplayPoints[0], "route-endpoint-start");
+
+  if (!AppState.publicRoutePreviewing) {
+    renderRouteEndpointDot(
+      pointsLayer,
+      fullDisplayPoints[fullDisplayPoints.length - 1],
+      "route-endpoint-finish",
+    );
+  }
+
   renderFixedRoutePinTooltip(
     pointsLayer,
     getLocationById(AppState.routeFrom),
     "route-fixed-tooltip-start",
   );
-  renderFixedRoutePinTooltip(
-    pointsLayer,
-    getLocationById(AppState.routeTo),
-    "route-fixed-tooltip-finish",
-  );
+
+  if (!AppState.publicRoutePreviewing) {
+    renderFixedRoutePinTooltip(
+      pointsLayer,
+      getLocationById(AppState.routeTo),
+      "route-fixed-tooltip-finish",
+    );
+  }
+
+  if (
+    walkerPoint &&
+    String(walkerPoint.floor) === String(AppState.currentFloor)
+  ) {
+    if (isRunPreview) {
+      renderPublicRouteWalker(walkerLayer, walkerPoint, currentPoint, nextPoint);
+    }
+
+    if (isLinePreview) {
+      var previewDot = document.createElementNS(
+        "http://www.w3.org/2000/svg",
+        "circle",
+      );
+
+      previewDot.setAttribute("cx", String(walkerPoint.x));
+      previewDot.setAttribute("cy", String(walkerPoint.y));
+      previewDot.setAttribute("r", "3.5");
+      previewDot.setAttribute("fill", "#2563eb");
+      previewDot.setAttribute("stroke", "#fff");
+      previewDot.setAttribute("stroke-width", "1");
+      previewDot.setAttribute("opacity", "0.95");
+      previewDot.classList.add("route-line-preview-dot");
+
+      svg.appendChild(previewDot);
+    }
+  }
 }
 
 function renderRouteEndpointDot(layer, point, className) {

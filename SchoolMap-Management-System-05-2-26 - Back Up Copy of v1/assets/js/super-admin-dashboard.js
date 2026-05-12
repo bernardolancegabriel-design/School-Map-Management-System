@@ -15,6 +15,7 @@ document.addEventListener("DOMContentLoaded", async function () {
   AppState.currentUser = sessionResult.payload.user;
 
   var user = AppState.currentUser;
+  setupSuperAdminBackLogoutGuard();
 
   // 2. Init UI
   document.getElementById("sa-username-display").textContent = "Super Administrator";
@@ -41,6 +42,31 @@ var pendingAdminStatusChange = null;
 var saArchiveItemsCache = [];
 var currentArchiveFilter = "all";
 var currentArchiveSearch = "";
+var superAdminBackLogoutGuardReady = false;
+
+function setupSuperAdminBackLogoutGuard() {
+  if (superAdminBackLogoutGuardReady) return;
+  superAdminBackLogoutGuardReady = true;
+
+  try {
+    history.pushState({ schoolMapSuperAdminBackGuard: true }, "", window.location.href);
+  } catch (err) {
+    console.warn("Super admin back guard could not initialize", err);
+  }
+
+  window.addEventListener("popstate", function () {
+    if (typeof handleLogoutToIndex === "function") {
+      handleLogoutToIndex();
+      try {
+        history.pushState({ schoolMapSuperAdminBackGuard: true }, "", window.location.href);
+      } catch (err) {
+        console.warn("Super admin back guard could not restore state", err);
+      }
+      return;
+    }
+    window.location.replace("index.html");
+  });
+}
 
 function showSaActionConfirm(options) {
   var config = Object.assign({
@@ -253,13 +279,21 @@ function renderAdminList() {
   if (!container) return;
 
   var searchInput = document.getElementById("admin-search");
+  var statusFilterInput = document.getElementById("admin-status-filter");
   var query = searchInput ? searchInput.value.trim().toLowerCase() : "";
+  var statusFilter = statusFilterInput ? statusFilterInput.value : "all";
   var accounts = saAdminsCache.filter(function (admin) {
+    var matchesStatus =
+      statusFilter === "all" ||
+      (statusFilter === "enabled" && !admin.isDisabled) ||
+      (statusFilter === "disabled" && admin.isDisabled);
+    if (!matchesStatus) return false;
     if (!query) return true;
     return (
       String(admin.fullName || "").toLowerCase().indexOf(query) !== -1 ||
       String(admin.email || "").toLowerCase().indexOf(query) !== -1 ||
-      String(admin.role || "").toLowerCase().indexOf(query) !== -1
+      String(admin.role || "").toLowerCase().indexOf(query) !== -1 ||
+      (admin.isDisabled ? "disabled" : "enabled active").indexOf(query) !== -1
     );
   });
 
@@ -268,7 +302,7 @@ function renderAdminList() {
     return;
   }
   if (accounts.length === 0) {
-    container.innerHTML = '<p style="opacity:0.5; text-align:center; padding:20px;">No accounts match your search.</p>';
+    container.innerHTML = '<p style="opacity:0.5; text-align:center; padding:20px;">No accounts match your filters.</p>';
     return;
   }
 
@@ -1104,6 +1138,7 @@ function getArchiveTypeLabel(type) {
     all: "Items",
     floor: "Floor",
     pin: "Pin",
+    legend: "Legend",
     route_location: "Route Location",
     route: "Route",
     point: "Point",
@@ -1114,6 +1149,7 @@ function getArchiveTypeLabel(type) {
 function getArchiveBadgeClass(type) {
   if (type === "floor") return "sa-badge-map";
   if (type === "pin") return "sa-badge-pin";
+  if (type === "legend") return "sa-badge-legend";
   if (type === "route" || type === "route_location") return "sa-badge-route";
   if (type === "point") return "sa-badge-visitor";
   return "sa-badge-map";
@@ -1123,6 +1159,9 @@ function getArchiveDetail(item) {
   var data = item && item.data ? item.data : {};
   if (item.type === "pin") {
     return ' | Floor: ' + escHtml(data.floor_name || data.map_id || "Unknown");
+  }
+  if (item.type === "legend") {
+    return ' | Color: ' + escHtml(data.color || "Unknown");
   }
   if (item.type === "route" || item.type === "route_location") {
     return ' | ' + escHtml((data.from_pin_name || data.from_pin_id || "Origin") + " to " + (data.to_pin_name || data.to_pin_id || "Destination"));
@@ -1153,6 +1192,8 @@ function getArchiveSearchText(item) {
     data.direction,
     data.description,
     data.category_name,
+    data.color,
+    data.icon,
   ].join(" ").toLowerCase();
 }
 

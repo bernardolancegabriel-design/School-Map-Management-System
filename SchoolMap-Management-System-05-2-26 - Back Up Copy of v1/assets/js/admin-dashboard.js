@@ -8,6 +8,7 @@
     legends: "schoolmap_legends",
     images: "schoolmap_floor_images",
     routes: "schoolmap_routes",
+    ui: "schoolmap_admin_ui_state",
   };
 
   // Built-in SVG icons keyed by name
@@ -160,6 +161,7 @@
   function setRouteDraft(draft) {
     state.routeEditor.draft = draft;
     state.routeEditor.cancelSnapshot = JSON.stringify(draft || null);
+    state.routeEditor.floorNeedsKeep = false;
   }
 
   function hasRouteDraftChanges() {
@@ -183,6 +185,7 @@
     state.routeEditor.selectedPointIndex = null;
     state.routeEditor.pickTarget = null;
     state.routeEditor.originLocked = false;
+    state.routeEditor.floorNeedsKeep = false;
     renderAll();
   }
 
@@ -232,6 +235,8 @@
   // ---------- State ----------
   const load = (k, fb) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fb; } catch { return fb; } };
   const save = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+  const savedUiState = load(KEYS.ui, {});
+  const validSections = ["floors", "pins", "routes", "legends"];
 
   function normalizeRoute(route) {
     return {
@@ -264,6 +269,7 @@
     selectedPinId: null,
     activeLegendId: null,
     mode: "default", // default | add-pin
+    floorSearch: "",
     search: "",
     legendSearch: "",
     routeLocationSearch: "",
@@ -286,18 +292,32 @@
       previewing: false,
       previewMode: null,
       previewStep: null,
+      previewSegmentProgress: 0,
+      previewFacing: 1,
       previewFloorBackup: null,
       previewPoints: [],
+      floorNeedsKeep: false,
     },
   };
   state.routes = state.routes.map(normalizeRoute);
-  state.activeFloor = state.floors[0]?.id ?? null;
-  state.activeLegendId = state.legends[0]?.id || null;
+  state.activeFloor =
+    savedUiState.activeFloor != null &&
+    state.floors.some((floor) => String(floor.id) === String(savedUiState.activeFloor))
+      ? Number(savedUiState.activeFloor)
+      : state.floors[0]?.id ?? null;
+  state.activeSection = validSections.includes(savedUiState.activeSection)
+    ? savedUiState.activeSection
+    : "floors";
+  state.zoom = Number(savedUiState.zoom || 1);
+  state.showGrid = !!savedUiState.showGrid;
+  state.showLegend = !!savedUiState.showLegend;
+  state.activeLegendId = null;
 
   // ---------- Helpers ----------
   const $ = (sel) => document.querySelector(sel);
   const cap = (s) => String(s).charAt(0).toUpperCase() + String(s).slice(1);
   const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
+  const showLongToast = (message) => showToast(message, 5000);
 
   function restoreDefaultMap() {
     if (state.activeFloor == null) {
@@ -339,16 +359,29 @@
 
   /** Find legend by id */
   const legendById   = (id) => state.legends.find(l => String(l.id) === String(id));
+  const isImageIcon = (icon) =>
+    /^data:image\//i.test(String(icon || "")) ||
+    /^https?:\/\//i.test(String(icon || "")) ||
+    /\.(svg|png|jpe?g|gif|webp)(\?.*)?$/i.test(String(icon || ""));
+  const renderLegendIcon = (icon, alt = "Legend icon") => {
+    const value = String(icon || "").trim();
+    if (isImageIcon(value)) {
+      return `<img class="legend-icon-img" src="${escapeHtml(value)}" alt="${escapeHtml(alt)}"/>`;
+    }
+    return ICONS[value || "MapPin"] || ICONS.MapPin;
+  };
   /** Colour for a pin — falls back gracefully */
   const colorForPin = (loc) => legendById(loc.legendId)?.color || "#ff4d4d";
   /** SVG icon string for a pin */
   const iconForPin = (loc) => {
     const lg = legendById(loc.legendId);
-    return ICONS[lg?.icon || "MapPin"] || ICONS.MapPin;
+    return renderLegendIcon(lg?.icon || "MapPin", lg?.label || "Pin icon");
   };
   /** Label of the legend a pin belongs to */
   const labelForPin  = (loc) => legendById(loc.legendId)?.label || "Unknown";
-  const activeLegend  = () => legendById(state.activeLegendId) || state.legends[0] || null;
+  const activeLegend  = () => legendById(state.activeLegendId) || null;
+  const defaultLegend = () => state.legends.length ? state.legends[0] : null;
+  const placementLegend = () => activeLegend() || defaultLegend();
   const floorImageSrc   = (id) => id != null ? (state.images[id] || (id === 1 ? "../images/map-ground-floor.png" : "")) : "";
   const API_BASE = "../backend/api.php";
 
@@ -392,6 +425,16 @@
     save(KEYS.routes, state.routes);
   }
 
+  function saveUiState() {
+    save(KEYS.ui, {
+      activeSection: state.activeSection,
+      activeFloor: state.activeFloor,
+      zoom: state.zoom,
+      showGrid: state.showGrid,
+      showLegend: state.showLegend,
+    });
+  }
+
   function normalizeImagePath(path) {
     if (!path) return "";
     const value = String(path).trim();
@@ -402,7 +445,10 @@
     if (/^images\//i.test(normalized)) {
       return "../" + normalized;
     }
-    if (/^maps\/ground\.png$/i.test(normalized)) {
+    if (/^uploads\//i.test(normalized)) {
+      return "../" + normalized;
+    }
+    if (/^maps\/(ground|default)\.png$/i.test(normalized)) {
       return "../images/map-ground-floor.png";
     }
     if (/^maps\//i.test(normalized)) {
@@ -430,6 +476,7 @@
       type: legend.type || String(name).toLowerCase().replace(/[\s/]+/g, "_"),
       color: legend.color || "#ff4d4d",
       icon: legend.icon || "MapPin",
+      iconUrl: isImageIcon(legend.icon) ? legend.icon : "",
     };
   }
 
@@ -487,7 +534,11 @@
     });
     if (!state.floors.length) state.floors = JSON.parse(JSON.stringify(DEFAULTS.floors));
     if (!state.floors.some(f => String(f.id) === String(state.activeFloor))) {
-      state.activeFloor = state.floors[0]?.id ?? null;
+      state.activeFloor =
+        savedUiState.activeFloor != null &&
+        state.floors.some((floor) => String(floor.id) === String(savedUiState.activeFloor))
+          ? Number(savedUiState.activeFloor)
+          : state.floors[0]?.id ?? null;
     }
   }
 
@@ -497,8 +548,8 @@
     if (!Array.isArray(legends)) return;
     state.legends = legends.map(normalizeLegend);
     if (!state.legends.length) state.legends = JSON.parse(JSON.stringify(DEFAULTS.legends));
-    if (!state.legends.some(lg => String(lg.id) === String(state.activeLegendId))) {
-      state.activeLegendId = state.legends[0]?.id || null;
+    if (state.activeLegendId != null && !state.legends.some(lg => String(lg.id) === String(state.activeLegendId))) {
+      state.activeLegendId = null;
     }
   }
 
@@ -550,6 +601,18 @@
 
   const routeById = (id) => state.routes.find(r => String(r.id) === String(id));
   const destinationLocation = (id) => state.locations.find(l => String(l.id) === String(id));
+
+  function floorDisplayName(floorId) {
+  const floor = state.floors.find(
+    (f) => String(f.id) === String(floorId),
+  );
+
+  if (!floor) {
+    return "Floor " + floorId;
+  }
+
+  return floor.label || floor.name || "Floor " + floorId;
+}
   const distanceBetween = (x1, y1, x2, y2) => Math.hypot(x1 - x2, y1 - y2);
   const nearestPin = (x, y, floor, threshold = 6) => {
     let nearest = null;
@@ -565,13 +628,54 @@
     return nearest;
   };
 
-  const showToast = (msg) => {
-    const el = $("#toast");
-    el.innerHTML = `${ICONS_SM.check} ${msg}`;
-    el.classList.add("show");
-    clearTimeout(showToast._t);
-    showToast._t = setTimeout(() => el.classList.remove("show"), 1800);
-  };
+  const showToast = (msg, duration = 1800) => {
+  const el = $("#toast");
+  if (!el) return;
+
+  el.classList.remove("route-floor-banner-toast");
+  el.innerHTML = `${ICONS_SM.check} <span>${msg}</span>`;
+
+  el.classList.add("show");
+
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(() => {
+    el.classList.remove("show", "route-floor-banner-toast");
+  }, duration);
+};
+
+function getRouteFloorToastLabel(floorId) {
+  const floor = state.floors.find(
+    (f) => String(f.id) === String(floorId),
+  );
+
+  if (!floor) {
+    return "Floor " + floorId;
+  }
+
+  return floor.label
+    ? `${floor.name} (${floor.label})`
+    : floor.name || "Floor " + floorId;
+}
+
+function showRoutePreviewFloorToast(floorId, mode) {
+  const el = $("#toast");
+  if (!el) return;
+
+  const floorLabel = getRouteFloorToastLabel(floorId);
+  const previewLabel = mode === "run" ? "Run route" : "Line preview";
+
+  el.innerHTML = `
+    ${ICONS_SM.check}
+    <span>${previewLabel} moved to <strong>${escapeHtml(floorLabel)}</strong></span>
+  `;
+
+  el.classList.add("show", "route-floor-banner-toast");
+
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(() => {
+    el.classList.remove("show", "route-floor-banner-toast");
+  }, 2600);
+}
 
   const updateFloorImagePreview = (src) => {
     const panel = $("#floorImagePreviewPanel");
@@ -731,7 +835,11 @@
     }
 
     window.addEventListener("popstate", () => {
-      showAdminBackConfirm("browser");
+      if (typeof forceLogoutToIndex === "function") {
+        forceLogoutToIndex();
+        return;
+      }
+      window.location.replace("index.html");
       try {
         history.pushState({ schoolMapAdminBackGuard: true }, "", window.location.href);
       } catch (err) {
@@ -961,6 +1069,7 @@
 
         route.points.push({ x, y, floor: state.activeFloor });
         state.routeEditor.selectedPointIndex = route.points.length - 1;
+        state.routeEditor.floorNeedsKeep = true;
         renderControlPanel();
         renderMap();
         return;
@@ -971,11 +1080,12 @@
 
     if (state.activeSection !== "pins" || state.mode !== "add-pin") return;
 
-    const currentLegend = activeLegend();
+    const currentLegend = placementLegend();
     if (!currentLegend) {
-      showToast("Create a legend before placing pins");
+      showToast("Add a legend category before placing pins");
       return;
     }
+    state.activeLegendId = String(currentLegend.id);
 
     const loc = {
       id: "loc-" + Date.now(),
@@ -1028,6 +1138,7 @@
     e.preventDefault();
     route.points.push({ x, y, floor: state.activeFloor });
     state.routeEditor.selectedPointIndex = route.points.length - 1;
+    state.routeEditor.floorNeedsKeep = true;
     renderAll();
   });
 
@@ -1039,6 +1150,7 @@
   }
 
   function renderAll() {
+    saveUiState();
     renderTabs();
     renderControlPanel();
     renderMap();
@@ -1063,11 +1175,17 @@
       if (state.activeSection === "routes") {
         content = `
           <div class="admin-module admin-module-routes">
-            <div class="module-banner module-banner-routes">ADMIN ROUTES</div>
+            <div class="module-banner module-banner-routes">Route Panel</div>
             ${renderRoutesList()}
           </div>
         `;
       } else {
+        const panelTitle =
+          state.activeSection === "floors"
+            ? "Floor Panel"
+            : state.activeSection === "pins"
+              ? "Pin Panel"
+              : "Legend Panel";
         const panelContent =
           state.activeSection === "floors"
             ? renderFloorsList()
@@ -1076,7 +1194,7 @@
               : renderLegendsList();
         content = `
           <div class="admin-module admin-module-panel">
-            <div class="module-banner module-banner-panel">ADMIN PANEL</div>
+            <div class="module-banner module-banner-panel">${panelTitle}</div>
             ${panelContent}
           </div>
         `;
@@ -1089,7 +1207,17 @@
   // ---------- LIST VIEWS ----------
 
   function renderFloorsList() {
-    const items = state.floors
+    const q = state.floorSearch.trim().toLowerCase();
+    const filtered = q
+      ? state.floors.filter(
+          (f) =>
+            String(f.id).includes(q) ||
+            (f.name || "").toLowerCase().includes(q) ||
+            (f.label || "").toLowerCase().includes(q),
+        )
+      : state.floors;
+
+    const items = filtered
       .map(
         (f) => `
       <div class="row ${state.activeFloor === f.id ? "selected" : ""}" data-floor-id="${f.id}">
@@ -1104,13 +1232,17 @@
     `,
       )
       .join("");
+    const emptyMessage = state.floorSearch
+      ? "No floors found."
+      : "No floors yet to show.";
     return `
       <div class="section">
         <div class="section-head">
           <h2>Floors <span class="count">${state.floors.length}</span></h2>
           <button class="btn btn-primary" data-action="add-floor">${ICONS_SM.plus} Add Floor</button>
         </div>
-        <div class="list">${items || `<p class="hint">No floors yet — add one to begin.</p>`}</div>
+        <div class="search">${ICONS_SM.search}<input type="text" id="floorSearch" placeholder="Search floors..." value="${escapeHtml(state.floorSearch)}"/></div>
+        <div class="list">${items || `<p class="hint">${emptyMessage}</p>`}</div>
       </div>
     `;
   }
@@ -1133,7 +1265,7 @@
           <span class="row-swatch" style="background:${colorForPin(loc)}">${iconForPin(loc)}</span>
           <div class="row-info">
             <div class="row-name">${escapeHtml(loc.name)}</div>
-            <div class="row-sub">${escapeHtml(lg?.label || "—")} · Floor ${loc.floor}</div>
+            <div class="row-sub">${escapeHtml(lg?.label || "—")} · ${escapeHtml(floorDisplayName(loc.floor))}</div>
           </div>
           <button class="icon-btn" data-edit-pin="${loc.id}">${ICONS_SM.pencil}</button>
           <button class="icon-btn danger" data-delete-pin="${loc.id}">${ICONS_SM.trash}</button>
@@ -1169,12 +1301,12 @@
     const items = filteredLegends
       .map(
         (lg) => `
-      <div class="row ${lg.id === state.activeLegendId ? "selected" : ""}" data-legend-id="${lg.id}">
+      <div class="row ${String(lg.id) === String(state.activeLegendId) ? "selected" : ""}" data-legend-id="${lg.id}">
         <span class="legend-color" style="background:${lg.color}"></span>
-        <span class="row-swatch" style="background:#fff;color:#2d2d2d">${ICONS[lg.icon] || ICONS.MapPin}</span>
+        <span class="row-swatch" style="background:#fff;color:#2d2d2d">${renderLegendIcon(lg.icon, lg.label)}</span>
         <div class="row-info">
           <div class="row-name">${escapeHtml(lg.label)}</div>
-          <div class="row-sub">${state.locations.filter(l => l.legendId === lg.id).length} pin(s)</div>
+          <div class="row-sub">${state.locations.filter(l => String(l.legendId) === String(lg.id)).length} pin(s)</div>
         </div>
         <button class="icon-btn" data-edit-legend="${lg.id}">${ICONS_SM.pencil}</button>
         <button class="icon-btn danger" data-delete-legend="${lg.id}">${ICONS_SM.trash}</button>
@@ -1191,7 +1323,7 @@
         </div>
         <div class="search">${ICONS_SM.search}<input type="text" id="legendSearch" placeholder="Search legends..." value="${escapeHtml(state.legendSearch)}"/></div>
         <div class="list">${items || `<p class="hint">No legends found.</p>`}</div>
-        <p class="hint">Click a legend row to make it the active category for new pins.</p>
+        <p class="hint">Click a legend row to choose the category for the next pin.</p>
       </div>
     `;
   }
@@ -1217,7 +1349,7 @@
 
     const pinRows = filteredLocations.map(loc => {
       const activeCount = state.routes.filter(r => r.originId === loc.id && !r.archived).length;
-      const archivedCount = state.routes.filter(r => r.originId === loc.id && r.archived).length;
+      const archivedCount = 0;
       const selectedClass = state.routeEditor.originFilter === loc.id ? 'selected' : '';
       return `
         <div class="row route-location-row ${selectedClass}" data-route-origin="${loc.id}">
@@ -1243,7 +1375,6 @@
         )
       : [];
     const activeRoutes = filteredRoutes.filter((r) => !r.archived);
-    const archivedRoutes = filteredRoutes.filter((r) => r.archived);
     const showRouteDetails = Boolean(selectedOrigin);
     const routeListTitle = selectedOrigin
       ? `Routes from ${escapeHtml(selectedOrigin.name)}`
@@ -1260,15 +1391,17 @@
           ? `${escapeHtml(origin.name)} → ${escapeHtml(dest.name)}`
           : escapeHtml(route.name);
       return `
-        <div class="row ${state.routeEditor.draft?.id === route.id ? "selected" : ""} ${route.archived ? "archived" : ""}" data-route-id="${route.id}">
-          <span class="row-tag">${escapeHtml(route.name)}</span>
-          <div class="row-info">
+        <div class="row route-detail-row ${state.routeEditor.draft?.id === route.id ? "selected" : ""}" data-route-id="${route.id}">
+          <div class="route-detail-main">
+            <span class="row-tag">${escapeHtml(route.name)}</span>
+            <div class="row-info">
             <div class="row-name">${routeLabel}</div>
             <div class="row-sub">${escapeHtml(dest?.name || route.destination || "No destination")} · ${route.points?.length || 0} point(s)</div>
           </div>
+          </div>
           <div class="row-actions">
             <button class="icon-btn" data-edit-route="${route.id}" title="Edit route">${ICONS_SM.pencil}</button>
-            <button class="icon-btn ${route.archived ? "btn-secondary" : "danger"}" data-archive-route="${route.id}" title="${route.archived ? "Restore route" : "Archive route"}">${route.archived ? "Restore" : ICONS_SM.trash}</button>
+            <button class="icon-btn danger" data-archive-route="${route.id}" title="Archive route">${ICONS_SM.trash}</button>
           </div>
         </div>
       `;
@@ -1277,7 +1410,6 @@
     const activeRouteList =
       activeRoutes.map(routeItem).join("") ||
       `<p class="hint">No matching active routes found.</p>`;
-    const archivedRouteList = archivedRoutes.map(routeItem).join("");
 
     return `
       <div class="section">
@@ -1292,7 +1424,6 @@
           </div>
           <div class="search">${ICONS_SM.search}<input type="text" id="routeSearch" placeholder="Search routes for this location..." value="${escapeHtml(state.routeSearch)}"/></div>
           <div class="list scroll">${activeRouteList}</div>
-          ${archivedRouteList ? `<div class="section-head"><h3>Archived Routes</h3></div><div class="list scroll">${archivedRouteList}</div>` : ""}
           <p class="hint">${routeHint}</p>
         </div>
       </div>
@@ -1304,8 +1435,12 @@
     const routeDraft = state.routeEditor.draft;
     const isExisting = Boolean(routeById(routeDraft.id));
     const pinOptions = state.locations.map(loc =>
-      `<option value="${loc.id}" ${loc.id === routeDraft.originId || loc.id === routeDraft.destinationId ? 'selected' : ''}>${escapeHtml(loc.name)} (F${loc.floor})</option>`
-    ).join('');
+     `<option value="${loc.id}" ${
+       loc.id === routeDraft.originId || loc.id === routeDraft.destinationId
+        ? "selected"
+         : ""
+       }>${escapeHtml(loc.name)} (${escapeHtml(floorDisplayName(loc.floor))})</option>`
+    ).join("");
 
     const originLocation = destinationLocation(routeDraft.originId);
     const destinationLocationLabel = destinationLocation(
@@ -1313,11 +1448,13 @@
     );
     const destinationFloor = destinationLocationLabel?.floor ?? null;
     const floorOptions = state.floors
-      .map(
-        (f) =>
-          `<option value="${f.id}" ${f.id === routeDraft.floor ? "selected" : ""}>${escapeHtml(f.name)} (F${escapeHtml(f.label)})</option>`,
-      )
-      .join("");
+     .map(
+      (f) =>
+        `<option value="${f.id}" ${
+        String(f.id) === String(routeDraft.floor) ? "selected" : ""
+      }>${escapeHtml(f.name)} (${escapeHtml(f.label || "Floor " + f.id)})</option>`,
+    )
+   .join("");
     const canContinueOnDestinationFloor =
       destinationFloor != null && destinationFloor !== routeDraft.floor;
     const pickModeHint =
@@ -1331,8 +1468,11 @@
       .map(
         (point, idx) => `
       <div class="row ${state.routeEditor.selectedPointIndex === idx ? "selected" : ""}" data-point-index="${idx}">
-        <span class="row-name">Point ${idx + 1}</span>
+        <div class="row-info">
+          <span class="row-name">Point ${idx + 1}</span>
         <div class="row-sub">${point.x.toFixed(1)}% · ${point.y.toFixed(1)}% · F${point.floor}</div>
+        </div>
+        <button class="icon-btn danger" title="Delete point" data-delete-route-point="${idx}">${ICONS_SM.trash}</button>
       </div>
     `,
       )
@@ -1381,7 +1521,7 @@
             </div>
             <div class="field">
               <label>Route Floor</label>
-              <div class="muted">Floor ${routeDraft.floor}</div>
+              <div class="muted">${escapeHtml(floorDisplayName(routeDraft.floor))}</div>
             </div>
             ${
               state.floors.length > 1
@@ -1405,17 +1545,18 @@
               <h2>Points <span class="count">${routeDraft.points.length}</span></h2>
             </div>
             <div class="list scroll">${pointItems || `<p class="hint">No points yet — click the map to add them.</p>`}</div>
+            </div>
           </div>
           <div class="form-foot">
-            <div class="foot-group foot-group-left">
-              ${isExisting ? `<button class="icon-btn btn-danger" title="Delete route" data-action="delete-route">${ICONS_SM.trash}</button>` : ""}
-              <button class="icon-btn btn-secondary" title="Line preview" data-action="preview-route">${ICONS_SM.routePreview}</button>
-              <button class="icon-btn btn-ghost" title="Clear points" data-action="clear-route">${ICONS_SM.eraser}</button>
-              <button class="icon-btn btn-secondary" title="Run route" data-action="run-route">${ICONS_SM.play}</button>
+            <div class="foot-group foot-group-left route-footer-tools">
+              ${isExisting ? `<button class="btn route-footer-btn route-footer-delete" title="Delete route" aria-label="Delete route" data-action="delete-route">${ICONS_SM.trash}</button>` : ""}
+              <button class="btn route-footer-btn route-footer-clear" title="Clear points" aria-label="Clear points" data-action="clear-route">${ICONS_SM.eraser}</button>
+              <button class="btn route-footer-btn route-footer-preview" title="Line preview" aria-label="Line preview" data-action="preview-route">${ICONS_SM.routePreview}</button>
+              <button class="btn route-footer-btn route-footer-run" title="Run route" aria-label="Run route" data-action="run-route">${ICONS_SM.play}</button>
             </div>
-            <div class="foot-group foot-group-right">
-              <button class="icon-btn btn-ghost" title="Cancel" data-action="close-route-editor">${ICONS_SM.xMark}</button>
-              <button class="icon-btn btn-primary" title="Save route" data-action="save-route">${ICONS_SM.check}</button>
+            <div class="foot-group foot-group-right route-footer-save">
+              <button class="btn route-footer-btn route-footer-cancel" title="Cancel" aria-label="Cancel" data-action="close-route-editor">${ICONS_SM.xMark}</button>
+              <button class="btn route-footer-btn route-footer-save-btn" title="Save route" aria-label="Save route" data-action="save-route">${ICONS_SM.check}</button>
             </div>
           </div>
         </div>
@@ -1462,14 +1603,14 @@
     } else if (e.kind === "pin") {
       // Build legend options
       const legendOptions = state.legends.map(lg =>
-        `<option value="${lg.id}" ${lg.id === e.draft.legendId ? "selected" : ""}>${escapeHtml(lg.label)}</option>`
+        `<option value="${lg.id}" ${String(lg.id) === String(e.draft.legendId) ? "selected" : ""}>${escapeHtml(lg.label)}</option>`
       ).join("");
 
       // Floor options
       const floorOptions = state.floors
         .map(
           (f) =>
-            `<option value="${f.id}" ${f.id === e.draft.floor ? "selected" : ""}>${escapeHtml(f.name)}</option>`,
+            `<option value="${f.id}" ${String(f.id) === String(e.draft.floor) ? "selected" : ""}>${escapeHtml(f.name)}</option>`,
         )
         .join("");
 
@@ -1525,9 +1666,7 @@
         <div class="icon-preview" id="legendPreview">
           <span class="legend-color" style="background:${e.draft.color}"></span>
           ${
-            e.draft.iconUrl
-              ? `<img src="${e.draft.iconUrl}" style="width:24px;height:24px;object-fit:contain"/>`
-              : ICONS[e.draft.icon] || ICONS.MapPin
+            renderLegendIcon(e.draft.iconUrl || e.draft.icon, e.draft.label || "Preview")
           }
           <span class="muted">${escapeHtml(e.draft.label || "Preview")}</span>
         </div>
@@ -1569,6 +1708,18 @@
       });
     });
 
+    const floorSearch = body.querySelector("#floorSearch");
+    if (floorSearch)
+      floorSearch.addEventListener("input", (e) => {
+        state.floorSearch = e.target.value;
+        renderControlPanel();
+        const s2 = $("#floorSearch");
+        if (s2) {
+          s2.focus();
+          s2.setSelectionRange(s2.value.length, s2.value.length);
+        }
+      });
+
     // Pins
     body.querySelectorAll("[data-pin-id]").forEach((el) => {
       el.addEventListener("click", () => {
@@ -1601,17 +1752,17 @@
     // Legends — click row to edit, edit / delete buttons
     body.querySelectorAll("[data-legend-id]").forEach((el) => {
       el.addEventListener("click", () => {
-        const lg = state.legends.find(x => x.id === el.dataset.legendId);
+        const lg = state.legends.find(x => String(x.id) === String(el.dataset.legendId));
         if (!lg) return;
         state.mode = "default";
-        state.activeLegendId = lg.id;
+        state.activeLegendId = String(lg.id);
         renderControlPanel();
       });
     });
     body.querySelectorAll("[data-edit-legend]").forEach((el) => {
       el.addEventListener("click", (e) => {
         e.stopPropagation();
-        const lg = state.legends.find(x => x.id === el.dataset.editLegend);
+        const lg = state.legends.find(x => String(x.id) === String(el.dataset.editLegend));
         if (!lg) return;
         state.mode = "default";
         state.edit = {
@@ -1633,9 +1784,20 @@
     body.querySelectorAll("[data-route-origin]").forEach((el) => {
       el.addEventListener("click", () => {
         const originId = el.dataset.routeOrigin;
-        state.routeEditor.originFilter =
-          state.routeEditor.originFilter === originId ? null : originId;
+        state.routeEditor.originFilter = originId;
         renderAll();
+        setTimeout(() => {
+          const details = document.querySelector(".route-details:not(.hidden)");
+          const panelBody = document.querySelector(".cp-body");
+          if (details && panelBody) {
+            panelBody.scrollTo({
+              top: details.offsetTop - panelBody.offsetTop - 8,
+              behavior: "smooth",
+            });
+          } else if (details) {
+            details.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
+        }, 40);
       });
     });
 
@@ -1879,15 +2041,35 @@
         if (!state.routeEditor.draft) return;
         state.routeEditor.draft.points = [];
         state.routeEditor.selectedPointIndex = null;
+        state.routeEditor.floorNeedsKeep = true;
         renderAll();
       });
     body
       .querySelector('[data-action="keep-route-floor"]')
-      ?.addEventListener("click", () => {
+      ?.addEventListener("click", async () => {
         if (!state.routeEditor.draft || state.activeFloor == null) return;
+        state.routeEditor.draft.points = state.routeEditor.draft.points.map((point) =>
+          Number(point.floor) === Number(state.activeFloor)
+            ? { ...point, floor: state.activeFloor }
+            : point
+        );
         state.routeEditor.draft.floor = state.activeFloor;
+        state.routeEditor.floorNeedsKeep = false;
+        const keptRoute = state.routeEditor.draft;
+        if (keptRoute.originId && keptRoute.destinationId && routeById(keptRoute.id)) {
+          state.routes = state.routes.map((route) =>
+            String(route.id) === String(keptRoute.id) ? { ...keptRoute } : route
+          );
+          saveRoutesLocally();
+          await syncRouteToBackend(keptRoute, false);
+        }
         showToast(`Keep route on Floor ${state.activeFloor}`);
         renderAll();
+      });
+    body
+      .querySelector("#routeFloorSwitch")
+      ?.addEventListener("change", () => {
+        showLongToast("If you want to switch floors, select a floor from the dropdown first, then click switch.");
       });
     body
       .querySelector('[data-action="change-route-floor"]')
@@ -1897,8 +2079,17 @@
         if (!select) return;
         const selectedFloor = Number(select.value);
         if (!state.floors.some((f) => f.id === selectedFloor)) return;
+        if (state.routeEditor.floorNeedsKeep) {
+          showLongToast("Click the Keep button first for the floor you are editing before switching floors.");
+          return;
+        }
+        if (selectedFloor === state.activeFloor) {
+          showLongToast("If you want to switch floors, select a floor from the dropdown first, then click switch.");
+          return;
+        }
         state.routeEditor.draft.floor = selectedFloor;
         state.activeFloor = selectedFloor;
+        state.routeEditor.selectedPointIndex = null;
         showToast(`Continue route on Floor ${selectedFloor}`);
         renderAll();
       });
@@ -1913,6 +2104,29 @@
       .forEach((btn) => {
         btn.addEventListener("click", () => closeRouteEditorWithConfirm());
       });
+    body.querySelectorAll("[data-point-index]").forEach((el) => {
+      el.addEventListener("click", () => {
+        state.routeEditor.selectedPointIndex = Number(el.dataset.pointIndex);
+        renderAll();
+      });
+    });
+    body.querySelectorAll("[data-delete-route-point]").forEach((btn) => {
+      btn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const idx = Number(btn.dataset.deleteRoutePoint);
+        if (!Number.isInteger(idx) || !state.routeEditor.draft) return;
+        state.routeEditor.draft.points.splice(idx, 1);
+        state.routeEditor.selectedPointIndex = Math.min(
+          idx,
+          state.routeEditor.draft.points.length - 1,
+        );
+        if (state.routeEditor.selectedPointIndex < 0) {
+          state.routeEditor.selectedPointIndex = null;
+        }
+        state.routeEditor.floorNeedsKeep = true;
+        renderAll();
+      });
+    });
     body
       .querySelector('[data-action="delete-route-point"]')
       ?.addEventListener("click", () => {
@@ -1923,6 +2137,10 @@
           idx,
           state.routeEditor.draft.points.length - 1,
         );
+        if (state.routeEditor.selectedPointIndex < 0) {
+          state.routeEditor.selectedPointIndex = null;
+        }
+        state.routeEditor.floorNeedsKeep = true;
         renderAll();
       });
     // Pin search
@@ -1980,6 +2198,17 @@
 
     body.querySelectorAll('[data-action="cancel"]').forEach((btn) => {
       btn.addEventListener("click", async () => {
+        if (state.edit?.kind === "floor" && hasFloorDraftChanges()) {
+          const confirmed = await showAdminActionConfirm({
+            title: "Discard Floor Changes",
+            message: state.edit.isNew
+              ? "Cancel this new floor? The details you entered will be discarded."
+              : "Cancel editing this floor? Unsaved floor changes will be discarded.",
+            confirmText: "Discard Changes",
+            danger: true,
+          });
+          if (!confirmed) return;
+        }
         if (state.edit?.kind === "pin" && state.edit.isNew) {
           state.locations = state.locations.filter(
             (p) => p.id !== state.edit.draft.id,
@@ -2121,12 +2350,15 @@
         if (!file) return;
         const r = new FileReader();
         r.onload = (e) => {
-          state.edit.draft.iconUrl = String(e.target.result || "");
+          const value = String(e.target.result || "");
+          state.edit.draft.icon = value;
+          state.edit.draft.iconUrl = value;
           renderControlPanel();
         };
         r.readAsDataURL(file);
       });
       body.querySelector("#lIconUrl")?.addEventListener("input", (e) => {
+        state.edit.draft.icon = e.target.value;
         state.edit.draft.iconUrl = e.target.value;
         refreshLegendPreview();
       });
@@ -2139,13 +2371,32 @@
     if (!prev) return;
     prev.innerHTML = `
       <span class="legend-color" style="background:${e.draft.color}"></span>
-      ${
-        e.draft.iconUrl
-          ? `<img src="${e.draft.iconUrl}" style="width:24px;height:24px;object-fit:contain"/>`
-          : ICONS[e.draft.icon] || ICONS.MapPin
-      }
+      ${renderLegendIcon(e.draft.iconUrl || e.draft.icon, e.draft.label || "Preview")}
       <span class="muted">${escapeHtml(e.draft.label || "Preview")}</span>
     `;
+  }
+
+  function hasFloorDraftChanges() {
+    const e = state.edit;
+    if (!e || e.kind !== "floor") return false;
+
+    const draft = e.draft || {};
+    const draftName = (draft.name || "").trim();
+    const draftLabel = (draft.label || "").trim();
+    const draftImage = draft.image || "";
+
+    if (e.isNew) {
+      return !!(draftName || draftLabel || draftImage);
+    }
+
+    const original = state.floors.find((f) => f.id === draft.id);
+    if (!original) return true;
+
+    return (
+      draftName !== (original.name || "").trim() ||
+      draftLabel !== (original.label || "").trim() ||
+      draftImage !== (state.images[draft.id] || "")
+    );
   }
 
   // ---------- SAVE EDIT ----------
@@ -2164,13 +2415,18 @@
       const res = await apiRequest("floors", method, floorPayload({ ...draft, image: d.image }), e.isNew ? null : draft.id);
       if (!res || res.error) { showToast(res?.message || "Could not save floor"); return; }
       if (e.isNew && res.data?.id) draft.id = Number(res.data.id);
+      const savedImage = normalizeImagePath(res.data?.image_path || d.image || floorImageSrc(draft.id) || "");
+      draft.image_path = savedImage;
       if (e.isNew) state.floors.push(draft);
       else         state.floors = state.floors.map(f => f.id === draft.id ? draft : f);
 
-      if (d.image) state.images[d.id] = d.image;
-      else if (d.id === 1)
-        state.images[d.id] = "../images/map-ground-floor.png";
-      else delete state.images[d.id];
+      if (savedImage) state.images[draft.id] = savedImage;
+      else if (draft.id === 1)
+        state.images[draft.id] = "../images/map-ground-floor.png";
+      else delete state.images[draft.id];
+      if (String(d.id) !== String(draft.id)) {
+        delete state.images[d.id];
+      }
 
       if (state.activeFloor == null) state.activeFloor = draft.id;
       showToast(e.isNew ? "Floor added" : "Floor updated");
@@ -2196,11 +2452,13 @@
       showToast(e.isNew ? "Pin added" : "Pin updated");
     } else if (e.kind === "legend") {
       const d = e.draft;
+      const iconValue = (d.iconUrl || d.icon || "").trim();
       const draft = {
         id: d.id,
         label: (d.label || "").trim() || "Untitled",
         color: d.color,
-        icon: (d.icon || "").trim() || "MapPin",
+        icon: iconValue || "MapPin",
+        iconUrl: isImageIcon(iconValue) ? iconValue : "",
       };
       const method = e.isNew || String(draft.id).startsWith("lg-") ? "POST" : "PUT";
       const res = await apiRequest("legends", method, legendPayload(draft), method === "POST" ? null : draft.id);
@@ -2208,9 +2466,9 @@
       if (method === "POST" && res.data?.id) {
         draft.id = Number(res.data.id);
       }
-      const exists = state.legends.find(l => l.id === draft.id);
+      const exists = state.legends.find(l => String(l.id) === String(draft.id));
       if (e.isNew && !exists) state.legends.push(draft);
-      else                    state.legends = state.legends.map(l => l.id === draft.id ? draft : l);
+      else                    state.legends = state.legends.map(l => String(l.id) === String(draft.id) ? draft : l);
       showToast(e.isNew ? "Legend added" : "Legend updated");
     }
 
@@ -2302,6 +2560,7 @@
     state.routeEditor.cancelSnapshot = null;
     state.routeEditor.selectedPointIndex = null;
     state.routeEditor.originLocked = false;
+    state.routeEditor.floorNeedsKeep = false;
     markAdminChangesPending();
     renderAll();
     showToast(existing ? "Route updated" : "Route saved");
@@ -2311,21 +2570,26 @@
     const route = routeById(routeId);
     if (!route) return;
     const confirmed = await showAdminActionConfirm({
-      title: route.archived ? "Restore Route" : "Archive Route",
-      message: route.archived
-        ? "Recover this route back to the active route list?"
-        : "Archive this route so Super Admin can review or recover it later?",
-      confirmText: route.archived ? "Restore Route" : "Archive Route",
-      danger: !route.archived,
+      title: "Archive Route",
+      message: "Archive this route so Super Admin can review or recover it later?",
+      confirmText: "Archive Route",
+      danger: true,
     });
     if (!confirmed) return;
-    route.archived = !route.archived;
-    state.routes = state.routes.map(r => r.id === route.id ? { ...route } : r);
+    const res = String(route.id).startsWith("route-")
+      ? { success: true }
+      : await apiRequest("routes", "DELETE", null, route.id);
+    if (!res || res.error) { showToast(res?.message || "Could not archive route"); return; }
+    state.routes = state.routes.filter(r => r.id !== route.id);
+    if (state.routeEditor.draft?.id === route.id) {
+      state.routeEditor.draft = null;
+      state.routeEditor.cancelSnapshot = null;
+      state.routeEditor.selectedPointIndex = null;
+    }
     saveRoutesLocally();
-    syncRouteToBackend(route, false);
     markAdminChangesPending();
     renderAll();
-    showToast(route.archived ? "Route archived" : "Route restored");
+    showToast("Route archived");
   }
 
   async function archiveOriginRoutes(originId) {
@@ -2345,8 +2609,12 @@
       danger: true,
     });
     if (!confirmed) return;
-    routes.forEach(r => { r.archived = true; });
-    state.routes = state.routes.map(r => routes.some(a => a.id === r.id) ? { ...r, archived: true } : r);
+    for (const route of routes) {
+      if (!String(route.id).startsWith("route-")) {
+        await apiRequest("routes", "DELETE", null, route.id);
+      }
+    }
+    state.routes = state.routes.filter(r => !routes.some(a => a.id === r.id));
     saveRoutesLocally();
     markAdminChangesPending();
     renderAll();
@@ -2428,13 +2696,13 @@
     if (!confirmed) return;
     const res = String(id).startsWith("lg-") ? { success: true } : await apiRequest("legends", "DELETE", null, id);
     if (!res || res.error) { showToast(res?.message || "Could not delete legend"); return; }
-    state.legends = state.legends.filter(l => l.id !== id);
-    if (state.activeLegendId === id) {
-      state.activeLegendId = state.legends[0]?.id || null;
+    state.legends = state.legends.filter(l => String(l.id) !== String(id));
+    if (String(state.activeLegendId) === String(id)) {
+      state.activeLegendId = null;
     }
     // Pins that referenced this legend lose their legendId
     state.locations = state.locations.map(l =>
-      l.legendId === id ? { ...l, legendId: state.legends[0]?.id || "" } : l
+      String(l.legendId) === String(id) ? { ...l, legendId: "" } : l
     );
     state.edit = null;
     markAdminChangesPending();
@@ -2458,7 +2726,17 @@
       .join("");
     sw.querySelectorAll("[data-fl]").forEach((b) =>
       b.addEventListener("click", () => {
-        state.activeFloor = +b.dataset.fl;
+        const nextFloor = +b.dataset.fl;
+        if (
+          state.activeSection === "routes" &&
+          state.routeEditor.draft &&
+          state.routeEditor.floorNeedsKeep &&
+          nextFloor !== state.activeFloor
+        ) {
+          showLongToast("Click the Keep button first for the floor you are editing before switching floors.");
+          return;
+        }
+        state.activeFloor = nextFloor;
         renderAll();
       }),
     );
@@ -2498,6 +2776,15 @@
 
     if (img) {
       img.onerror = () => {
+        const fallbackSrc = "../images/map-ground-floor.png";
+        if (img.dataset.fallbackTried !== "1" && img.src.indexOf("map-ground-floor.png") === -1) {
+          img.dataset.fallbackTried = "1";
+          if (state.activeFloor != null) {
+            state.images[state.activeFloor] = fallbackSrc;
+          }
+          img.src = fallbackSrc;
+          return;
+        }
         showEmptyState(
           state.activeFloor != null
             ? "No map image found. Click restore to load the default map."
@@ -2513,6 +2800,7 @@
     if (src) {
       if (img) {
         img.hidden = true;
+        img.dataset.fallbackTried = "0";
         img.src = src;
         if (img.complete && img.naturalWidth) {
           if (empty) empty.hidden = true;
@@ -2570,6 +2858,7 @@
   function renderRouteOverlay() {
     const svgLayer = document.getElementById("routeEditorSvg");
     const pointsLayer = document.getElementById("routePointsLayer");
+    const walkerLayer = document.getElementById("routeWalkerLayer");
     if (!svgLayer || !pointsLayer) return;
 
     svgLayer.innerHTML = "";
@@ -2578,16 +2867,19 @@
     if (state.activeSection !== "routes" || !state.routeEditor.draft) {
       svgLayer.style.display = "none";
       pointsLayer.style.display = "none";
+      if (walkerLayer) walkerLayer.innerHTML = "";
       return;
     }
 
     const draft = state.routeEditor.draft;
     svgLayer.style.display = "block";
     pointsLayer.style.display = "block";
+    if (walkerLayer) walkerLayer.style.display = "block";
     svgLayer.setAttribute("viewBox", "0 0 100 100");
     svgLayer.setAttribute("preserveAspectRatio", "none");
 
     if (!state.routeEditor.previewing && draft.floor !== state.activeFloor) {
+      if (walkerLayer) walkerLayer.innerHTML = "";
       const note = document.createElement("div");
       note.className = "route-editor-floor-note";
       note.textContent = `Route is on Floor ${draft.floor}. Switch to that floor to edit points.`;
@@ -2626,23 +2918,52 @@
       });
     const isPreview = !!state.routeEditor.previewing;
     const isLinePreview = isPreview && state.routeEditor.previewMode === "line";
+    const isRunPreview = isPreview && state.routeEditor.previewMode === "run";
+    if (!isRunPreview && walkerLayer) walkerLayer.innerHTML = "";
     const currentStep = isPreview ? (state.routeEditor.previewStep ?? 0) : null;
     const visiblePath = isPreview
-      ? state.routeEditor.previewMode === "run"
+      ? state.routeEditor.previewMode === "run" || state.routeEditor.previewMode === "line"
         ? allPathPoints
             .slice(0, currentStep + 1)
             .filter((p) => p.floor === state.activeFloor)
         : allPathPoints.filter((p) => p.floor === state.activeFloor)
       : allPathPoints.filter((p) => p.floor === state.activeFloor);
     const currentPoint =
-      isPreview && state.routeEditor.previewMode === "run"
+      isPreview && (state.routeEditor.previewMode === "run" || state.routeEditor.previewMode === "line")
         ? allPathPoints[currentStep]
         : null;
+    const nextPreviewPoint =
+      isPreview && currentStep != null
+        ? allPathPoints[currentStep + 1]
+        : null;
+    const previewProgress = isPreview
+      ? Math.max(0, Math.min(1, state.routeEditor.previewSegmentProgress ?? 0))
+      : 0;
+    const easedPreviewProgress =
+      previewProgress * previewProgress * (3 - 2 * previewProgress);
+    const walkerPoint =
+      isPreview && currentPoint && nextPreviewPoint && currentPoint.floor === nextPreviewPoint.floor
+        ? {
+            x: currentPoint.x + (nextPreviewPoint.x - currentPoint.x) * easedPreviewProgress,
+            y: currentPoint.y + (nextPreviewPoint.y - currentPoint.y) * easedPreviewProgress,
+            floor: currentPoint.floor,
+          }
+        : currentPoint;
     const routeFloor = draft.floor;
     const originOnFloor = origin && origin.floor === state.activeFloor;
     const destinationOnFloor =
       destination && destination.floor === state.activeFloor;
-    const routePoints = visiblePath;
+    const routePoints =
+      (isLinePreview || isRunPreview) &&
+      walkerPoint &&
+      currentPoint &&
+      nextPreviewPoint &&
+      currentPoint.floor === nextPreviewPoint.floor &&
+      walkerPoint.floor === state.activeFloor &&
+      previewProgress > 0 &&
+      previewProgress < 1
+        ? [...visiblePath, walkerPoint]
+        : visiblePath;
     if (state.routeEditor.mode === "arrow") {
       const defs = document.createElementNS(
         "http://www.w3.org/2000/svg",
@@ -2673,9 +2994,13 @@
       line.setAttribute("stroke-linejoin", "round");
       line.setAttribute("stroke-opacity", "0.95");
       line.classList.add("route-line");
-      if (isPreview) {
+      if (isLinePreview) {
         line.classList.add("route-line-preview");
+        line.classList.add("route-line-preview-dashed");
+        line.setAttribute("stroke-dasharray", "4 5");
         line.style.animationDelay = `${i * 0.12}s`;
+      } else if (isPreview) {
+        line.classList.add("route-line-run");
       }
       if (state.routeEditor.mode === "arrow") {
         line.setAttribute("marker-end", "url(#routeArrow)");
@@ -2684,7 +3009,7 @@
       svgLayer.appendChild(line);
     }
 
-    if (originOnFloor && !isLinePreview) {
+    if (originOnFloor) {
       const start = document.createElementNS(
         "http://www.w3.org/2000/svg",
         "circle",
@@ -2695,7 +3020,7 @@
       start.setAttribute("fill", routeColor);
       svgLayer.appendChild(start);
     }
-    if (destinationOnFloor && !isLinePreview) {
+    if (destinationOnFloor && (!isLinePreview || currentStep >= allPathPoints.length - 1)) {
       const end = document.createElementNS(
         "http://www.w3.org/2000/svg",
         "circle",
@@ -2707,26 +3032,31 @@
       svgLayer.appendChild(end);
     }
     if (
-      currentPoint &&
-      currentPoint.floor === state.activeFloor &&
-      !isLinePreview
+      walkerPoint &&
+      walkerPoint.floor === state.activeFloor &&
+      isPreview
     ) {
-      const walker = document.createElementNS(
-        "http://www.w3.org/2000/svg",
-        "circle",
-      );
-      walker.setAttribute("cx", `${currentPoint.x}`);
-      walker.setAttribute("cy", `${currentPoint.y}`);
-      walker.setAttribute("r", "3.5");
-      walker.setAttribute("fill", "#f59e0b");
-      walker.setAttribute("stroke", "#fff");
-      walker.setAttribute("stroke-width", "1");
-      walker.setAttribute("opacity", "0.95");
-      svgLayer.appendChild(walker);
+      if (isRunPreview && walkerLayer) {
+        renderRouteWalker(walkerLayer, walkerPoint, currentPoint, nextPreviewPoint);
+      } else {
+        const walker = document.createElementNS(
+          "http://www.w3.org/2000/svg",
+          "circle",
+        );
+        walker.setAttribute("cx", `${walkerPoint.x}`);
+        walker.setAttribute("cy", `${walkerPoint.y}`);
+        walker.setAttribute("r", "3.5");
+        walker.setAttribute("fill", "#2563eb");
+        walker.setAttribute("stroke", "#fff");
+        walker.setAttribute("stroke-width", "1");
+        walker.setAttribute("opacity", "0.95");
+        svgLayer.appendChild(walker);
+      }
     }
 
     if (!isPreview) {
       draft.points.forEach((point, i) => {
+        if (Number(point.floor ?? draft.floor) !== Number(state.activeFloor)) return;
         const dot = document.createElement("button");
         dot.type = "button";
         dot.className = `route-point${state.routeEditor.selectedPointIndex === i ? " selected" : ""}`;
@@ -2756,11 +3086,56 @@
     state.routeEditor.previewing = false;
     state.routeEditor.previewMode = null;
     state.routeEditor.previewStep = null;
+    state.routeEditor.previewSegmentProgress = 0;
+    state.routeEditor.previewFacing = 1;
     state.routeEditor.previewPoints = [];
     if (state.routeEditor.previewFloorBackup != null) {
       state.activeFloor = state.routeEditor.previewFloorBackup;
       state.routeEditor.previewFloorBackup = null;
     }
+  }
+
+  function renderRouteWalker(layer, point, currentPoint, nextPoint) {
+    if (!layer || !point) return;
+    if (currentPoint && nextPoint && currentPoint.floor === nextPoint.floor) {
+      const dx = Number(nextPoint.x) - Number(currentPoint.x);
+      if (Math.abs(dx) > 0.25) {
+        state.routeEditor.previewFacing = dx < 0 ? -1 : 1;
+      }
+    }
+
+    let walker = layer.querySelector(".route-walker");
+    if (!walker) {
+      walker = document.createElement("div");
+      walker.className = "route-walker";
+
+      const media = document.createElement("video");
+      media.className = "route-walker-media";
+      media.src = "../images/walking-icon.webm";
+      media.autoplay = true;
+      media.loop = true;
+      media.muted = true;
+      media.playsInline = true;
+      media.setAttribute("playsinline", "");
+      media.setAttribute("aria-hidden", "true");
+
+      const fallback = document.createElement("span");
+      fallback.className = "route-walker-fallback";
+      fallback.innerHTML = ICONS_SM.play;
+
+      media.addEventListener("error", () => {
+        media.style.display = "none";
+        fallback.style.display = "flex";
+      });
+
+      walker.appendChild(media);
+      walker.appendChild(fallback);
+      layer.appendChild(walker);
+    }
+
+    walker.style.left = `${point.x}%`;
+    walker.style.top = `${point.y}%`;
+    walker.style.transform = `translate(-50%, -100%) scaleX(${state.routeEditor.previewFacing || 1})`;
   }
 
   function buildRoutePreviewPoints(route) {
@@ -2806,27 +3181,67 @@
     stopRoutePreview();
     state.routeEditor.previewPoints = previewPoints;
     state.routeEditor.previewStep = 0;
+    state.routeEditor.previewSegmentProgress = 0;
+    state.routeEditor.previewFacing = 1;
     state.routeEditor.previewMode = mode;
-    state.routeEditor.previewFloorBackup = state.activeFloor;
-    state.activeFloor = previewPoints[0].floor;
+    const startingFloor = previewPoints[0].floor;
+    const previousActiveFloor = state.activeFloor;
+
+    state.activeFloor = startingFloor;
     state.routeEditor.previewing = true;
+
     renderMap();
 
+    if (String(previousActiveFloor) !== String(startingFloor)) {
+      setTimeout(() => {
+        showRoutePreviewFloorToast(startingFloor, mode);
+      }, 40);
+    }
+
+    const smoothPreview = mode === "line" || mode === "run";
+    const previewInterval = smoothPreview ? 40 : 500;
     routePreviewTimer = window.setInterval(() => {
       if (!state.routeEditor.previewing) return;
+      if (smoothPreview) {
+        const progressStep = mode === "run" ? 0.016 : 0.025;
+        const progress = Math.min((state.routeEditor.previewSegmentProgress ?? 0) + progressStep, 1);
+        state.routeEditor.previewSegmentProgress = progress;
+        if (progress < 1) {
+          renderMap();
+          return;
+        }
+        state.routeEditor.previewSegmentProgress = 0;
+      }
       const nextStep = (state.routeEditor.previewStep ?? 0) + 1;
+
       if (nextStep >= state.routeEditor.previewPoints.length) {
         stopRoutePreview();
         renderMap();
         return;
       }
+
+      const previousFloor = state.activeFloor;
+
       state.routeEditor.previewStep = nextStep;
+
       const nextPoint = state.routeEditor.previewPoints[nextStep];
+
       if (nextPoint && nextPoint.floor != null) {
         state.activeFloor = nextPoint.floor;
       }
+
       renderMap();
-    }, 500);
+
+      if (
+        nextPoint &&
+        nextPoint.floor != null &&
+        String(previousFloor) !== String(nextPoint.floor)
+      ) {
+        setTimeout(() => {
+          showRoutePreviewFloorToast(nextPoint.floor, mode);
+        }, 40);
+      }
+    }, previewInterval);
   }
 
   function previewRoute() {
@@ -2856,6 +3271,7 @@
       const { x, y } = getMapCoordinates(ev.clientX, ev.clientY);
       const prevFloor = draft.points[index]?.floor ?? state.activeFloor;
       draft.points[index] = { x, y, floor: prevFloor };
+      state.routeEditor.floorNeedsKeep = true;
       renderMap();
     };
 
@@ -2879,6 +3295,7 @@
               route.origin = pin.name;
               route.floor = pin.floor;
               route.points[index] = { x: pin.x, y: pin.y, floor: pin.floor };
+              state.routeEditor.floorNeedsKeep = true;
             }
           } else if (!route.destinationId && index === route.points.length - 1 && pin.id !== route.originId) {
             const confirmed = await showAdminActionConfirm({
@@ -2891,6 +3308,7 @@
               route.destinationId = pin.id;
               route.destination = pin.name;
               route.points[index] = { x: pin.x, y: pin.y, floor: pin.floor };
+              state.routeEditor.floorNeedsKeep = true;
             }
           }
         }

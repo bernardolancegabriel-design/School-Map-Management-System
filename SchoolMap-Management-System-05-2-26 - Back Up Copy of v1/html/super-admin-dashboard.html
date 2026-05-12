@@ -128,13 +128,25 @@
             </div>
             <div class="wobbly-card wobbly-card-white" style="padding:20px;">
               <h3 class="card-heading">Existing Accounts</h3>
-              <input
-                type="search"
-                id="admin-search"
-                class="wobbly-input sa-admin-search"
-                placeholder="Search accounts by name or email..."
-                oninput="filterExistingAdmins(this.value)"
-              />
+              <div class="sa-admin-filter-row">
+                <input
+                  type="search"
+                  id="admin-search"
+                  class="wobbly-input sa-admin-search"
+                  placeholder="Search accounts by name or email..."
+                  oninput="filterExistingAdmins()"
+                />
+                <select
+                  id="admin-status-filter"
+                  class="wobbly-input sa-admin-status-filter"
+                  onchange="filterExistingAdmins()"
+                  aria-label="Filter admin account status"
+                >
+                  <option value="all">All accounts</option>
+                  <option value="enabled">Enabled only</option>
+                  <option value="disabled">Disabled only</option>
+                </select>
+              </div>
               <div id="admin-list-container">
                 <!-- List populated by JS -->
               </div>
@@ -233,7 +245,7 @@
         <div id="tab-archive" class="sa-tab-content" style="display:none;">
           <div class="sa-section-header">
             <h2>🗂️ Archive Management</h2>
-            <p>Recover floors, pins, route locations, routes, and route points that admins archived or deleted.</p>
+            <p>Recover floors, pins, legends, route locations, routes, and route points that admins archived or deleted.</p>
           </div>
           <div class="wobbly-card wobbly-card-white" style="padding:20px;">
             <div class="sa-archive-head">
@@ -244,13 +256,14 @@
               type="search"
               id="archive-search"
               class="wobbly-input sa-archive-search"
-              placeholder="Search archived floors, pins, routes, points..."
+              placeholder="Search archived floors, pins, legends, routes, points..."
               oninput="searchArchives(this.value)"
             />
             <div class="sa-archive-filters" aria-label="Archive categories">
               <button class="sa-archive-filter active" data-archive-filter="all" onclick="setArchiveFilter('all')">All</button>
               <button class="sa-archive-filter" data-archive-filter="floor" onclick="setArchiveFilter('floor')">Floors</button>
               <button class="sa-archive-filter" data-archive-filter="pin" onclick="setArchiveFilter('pin')">Pins</button>
+              <button class="sa-archive-filter" data-archive-filter="legend" onclick="setArchiveFilter('legend')">Legends</button>
               <button class="sa-archive-filter" data-archive-filter="route_location" onclick="setArchiveFilter('route_location')">Route Location</button>
               <button class="sa-archive-filter" data-archive-filter="route" onclick="setArchiveFilter('route')">Route</button>
               <button class="sa-archive-filter" data-archive-filter="point" onclick="setArchiveFilter('point')">Points</button>
@@ -402,7 +415,7 @@
   <!-- Toast -->
   <div id="toast" class="toast" style="display:none"></div>
 
-  <script src="../assets/js/core.js?v=20260511-logs-ui"></script>
-  <script src="../assets/js/super-admin-dashboard.js?v=20260512-superadmin-reset-pass"></script>
+  <script src="../assets/js/core.js?v=20260512-back-logout-confirm"></script>
+  <script src="../assets/js/super-admin-dashboard.js?v=20260512-back-logout-confirm"></script>
 </body>
 </html>

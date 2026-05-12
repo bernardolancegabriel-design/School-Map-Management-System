@@ -1305,11 +1305,15 @@ a {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(18, 29, 69, 0.75);
+  background: #121d45;
+}
+
+.admin-loading-overlay.admin-loading-overlay-dark {
+  background: #0c1437;
 }
 
 .admin-loading-card {
-  background: #ffffff;
+  background: #f4f7ff;
   border: 2px solid #0b3d91;
   border-radius: 18px;
   padding: 24px 32px;
@@ -1368,6 +1372,8 @@ a {
   place-items: center;
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.16);
   cursor: grab;
+  touch-action: none;
+  user-select: none;
   transition: transform 0.15s ease;
 }
 
@@ -1378,6 +1384,7 @@ a {
 
 .verification-card {
   max-width: 420px;
+  color: #000000;
 }
 
 .verification-step {
@@ -1411,19 +1418,22 @@ a {
   width: 100%;
   min-height: 44px;
   border-radius: 999px;
-  background: #2d5da1;
+  background-color: #0b3d91;
   color: #fff;
   font-weight: 700;
   border: none;
   cursor: pointer;
-  transition:
-    background 0.2s ease,
-    opacity 0.2s ease;
+  transition: background-color 0.2s ease, opacity 0.2s ease;
+}
+
+.verification-button:hover:not(:disabled) {
+  background-color: #062654;
 }
 
 .verification-button:disabled {
-  opacity: 0.55;
+  opacity: 0.7;
   cursor: not-allowed;
+  background-color: #0b3d91;
 }
 
 /* ===== MODALS GLOBAL ===== */
@@ -3836,6 +3846,12 @@ h3 {
   background: var(--navy);
   color: #fff;
 }
+.legend-icon-img {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+  display: block;
+}
 .zoom-group {
   display: flex;
   align-items: center;
@@ -4713,12 +4729,28 @@ GUEST LOGBOOK MODAL — FINAL FIXED VERSION
 .sa-admin-search {
   margin: 4px 0 10px;
 }
+.sa-admin-filter-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) 180px;
+  gap: 10px;
+  margin: 4px 0 10px;
+}
+.sa-admin-filter-row .sa-admin-search {
+  margin: 0;
+}
+.sa-admin-status-filter {
+  width: 100%;
+}
 
 #new-admin-pass {
   padding-right: 44px;
 }
 
 @media (max-width: 860px) {
+  .sa-admin-filter-row {
+    grid-template-columns: 1fr;
+  }
+
   .sa-header-inner {
     grid-template-columns: 1fr;
     justify-items: center;
@@ -5140,6 +5172,10 @@ GUEST LOGBOOK MODAL — FINAL FIXED VERSION
 .sa-badge-pin {
   background: #ede9fe;
   color: #6d28d9;
+}
+.sa-badge-legend {
+  background: #fce7f3;
+  color: #be185d;
 }
 .sa-badge-route {
   background: #dbeafe;
@@ -5916,9 +5952,13 @@ Used in: admin-panel.html
   background: rgba(18, 29, 69, 0.75);
 }
 
+.admin-loading-overlay.admin-loading-overlay-dark {
+  background: linear-gradient(180deg, rgba(18, 29, 69, 0.95), rgba(12, 20, 55, 0.92));
+}
+
 /* ADMIN PANEL */
 .admin-loading-card {
-  background: #ffffff;
+  background: #f4f7ff;
   border: 2px solid #0b3d91;
   border-radius: 18px;
   padding: 24px 32px;
@@ -5932,6 +5972,39 @@ Used in: admin-panel.html
   font-size: 18px;
   font-weight: 700;
   color: #0b3d91;
+}
+
+.admin-loading-card h2 {
+  color: #0b3d91;
+  margin-bottom: 16px;
+}
+
+.verification-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 44px;
+  border-radius: 999px;
+  background-color: #0b3d91;
+  color: #fff;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  padding: 10px 16px;
+  font-size: 14px;
+  transition: background-color 0.2s ease, opacity 0.2s ease;
+  margin-top: 12px;
+}
+
+.verification-button:hover:not(:disabled) {
+  background-color: #062654;
+}
+
+.verification-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  background-color: #0b3d91;
 }
 
 /* ADMIN PANEL */
@@ -5956,6 +6029,7 @@ Used in: admin-panel.html
   display: flex;
   align-items: center;
   justify-content: center;
+  touch-action: none;
 }
 
 /* ADMIN PANEL */
@@ -5982,6 +6056,8 @@ Used in: admin-panel.html
   place-items: center;
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.16);
   cursor: grab;
+  touch-action: none;
+  user-select: none;
   transition: transform 0.15s ease;
 }
 
@@ -6032,20 +6108,23 @@ Used in: admin-panel.html
   width: 100%;
   min-height: 44px;
   border-radius: 999px;
-  background: #2d5da1;
+  background-color: #0b3d91;
   color: #fff;
   font-weight: 700;
   border: none;
   cursor: pointer;
-  transition:
-    background 0.2s ease,
-    opacity 0.2s ease;
+  transition: background-color 0.2s ease, opacity 0.2s ease;
+}
+
+.verification-button:hover:not(:disabled) {
+  background-color: #062654;
 }
 
 /* ADMIN PANEL */
 .verification-button:disabled {
-  opacity: 0.55;
+  opacity: 0.7;
   cursor: not-allowed;
+  background-color: #0b3d91;
 }
 
 /* =========================================================
@@ -7243,14 +7322,20 @@ Used in: admin-panel.html
   vector-effect: non-scaling-stroke;
 }
 .route-line-preview {
-  stroke-dasharray: 20 8;
-  stroke-dashoffset: 28;
-  animation: route-preview-grow 0.6s ease forwards;
+  stroke-dasharray: 4 5;
+  stroke-dashoffset: 24;
+  animation: route-preview-walk 2.2s linear infinite;
 }
 
 @keyframes route-preview-grow {
   to {
     stroke-dashoffset: 0;
+  }
+}
+
+@keyframes route-preview-walk {
+  to {
+    stroke-dashoffset: -24;
   }
 }
 .route-point {
@@ -7870,9 +7955,12 @@ Used in: admin-panel.html
   box-shadow: 0 0 0 4px rgba(45, 93, 161, 0.32);
 }
 .route-line-preview {
-  stroke-dasharray: 18 10;
-  stroke-dashoffset: 28;
-  animation: route-preview-grow 1s ease-in-out forwards;
+  stroke-dasharray: 4 5;
+  stroke-dashoffset: 24;
+  animation: route-preview-walk 2.2s linear infinite;
+}
+.route-line-preview-dashed {
+  stroke-linecap: round;
 }
 .route-editor-floor-note {
   position: absolute;
@@ -7897,4 +7985,157 @@ Used in: admin-panel.html
     right: 14px;
     width: auto;
   }
+}
+
+/*FOR ROUTE PREVIEW IN MAP.HTML*/
+.map-side-route-tools {
+  position: absolute;
+  left: 22px;
+  top: 88px;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.map-side-route-tools .map-side-btn {
+  position: static !important;
+}
+
+.map-side-btn-run,
+.map-side-btn-line-preview {
+  color: #192a57;
+}
+
+/* Same line preview animation as admin-dashboard */
+#page-map .route-line-preview {
+  stroke-dasharray: 4 5;
+  stroke-dashoffset: 24;
+  animation: route-preview-walk 2.2s linear infinite;
+}
+
+#page-map .route-line-preview-dashed {
+  stroke-linecap: round;
+}
+
+#page-map .route-line-preview-dot {
+  filter: drop-shadow(0 2px 3px rgba(25, 42, 87, 0.25));
+}
+
+.route-walker {
+  position: absolute;
+  width: 42px;
+  height: 42px;
+  pointer-events: none;
+  z-index: 8;
+}
+
+.route-walker-media {
+  width: 42px;
+  height: 42px;
+  object-fit: contain;
+  display: block;
+}
+
+.route-walker-fallback {
+  display: none;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #192a57;
+  border-radius: 50%;
+  background: #fff;
+  color: #192a57;
+  box-shadow: 3px 3px 0 #2d2d2d;
+}
+
+/* FOR THE WALKING IN MAP.HTML*/
+/* ===== PUBLIC MAP WALKING ROUTE FIX ===== */
+#page-map .route-editor-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 6 !important;
+  pointer-events: none;
+}
+
+#page-map .route-points-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 7 !important;
+  pointer-events: none;
+}
+
+#page-map .route-walker-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 50 !important;
+  pointer-events: none;
+  overflow: visible;
+  display: block;
+}
+
+#page-map .route-walker {
+  position: absolute;
+  width: 46px;
+  height: 46px;
+  z-index: 999 !important;
+  pointer-events: none;
+  transform-origin: center bottom;
+}
+
+#page-map .route-walker-media {
+  width: 46px;
+  height: 46px;
+  object-fit: contain;
+  display: block;
+}
+
+#page-map .route-walker-fallback {
+  display: flex;
+  width: 46px;
+  height: 46px;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  filter: drop-shadow(2px 3px 0 rgba(0, 0, 0, 0.25));
+}
+
+/* Prevent flicker while public route preview is building the line */
+#page-map .route-line-building {
+  animation: none !important;
+}
+
+#page-map .route-line-preview {
+  stroke-dasharray: 4 5;
+  stroke-dashoffset: 24;
+  animation: route-preview-walk 2.2s linear infinite;
+}
+
+#page-map .route-line-preview-dashed {
+  stroke-linecap: round;
+}
+
+#page-map .route-line-preview-dot {
+  filter: drop-shadow(0 2px 3px rgba(25, 42, 87, 0.25));
+}
+
+#page-map .map-side-route-tools {
+  position: absolute;
+  top: 6px;
+  left: 8px;
+  z-index: 120;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: auto;
 }

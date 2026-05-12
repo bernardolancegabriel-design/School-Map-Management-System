@@ -11,58 +11,10 @@
       href="https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=Patrick+Hand&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="../assets/css/admin.css?v=20260512-no-native-popups" />
+    <link rel="stylesheet" href="../assets/css/admin.css?v=20260512-route-details-active-only" />
   </head>
   <body>
-    <div id="adminLoadingOverlay" class="admin-loading-overlay">
-      <div class="admin-loading-card verification-card">
-        <h2 id="admin-loading-text">Administrator confirmation</h2>
 
-        <div class="verification-step" id="verificationStep1">
-          <p class="verification-instruction">
-            Complete both checks to continue into the admin panel.
-          </p>
-
-          <div class="verification-checkbox">
-            <input type="checkbox" id="confirmAdmin" />
-            <label for="confirmAdmin"
-              >I confirm I am the authorized SchoolMap administrator.</label
-            >
-          </div>
-
-          <div class="verification-checkbox">
-            <input type="checkbox" id="confirmResponsibility" />
-            <label for="confirmResponsibility"
-              >I understand edits are permanent and will proceed
-              carefully.</label
-            >
-          </div>
-
-          <button
-            class="btn btn-primary verification-button"
-            id="verificationContinue"
-            disabled
-          >
-            Proceed to slide verification
-          </button>
-        </div>
-
-        <div class="verification-step hidden" id="verificationStep2">
-          <p class="verification-instruction">
-            Drag the handle all the way to confirm your access.
-          </p>
-
-          <div class="verification-track" id="verificationTrack">
-            <div class="verification-text">Slide to confirm</div>
-            <div class="verification-handle" id="verificationHandle">↔</div>
-          </div>
-
-          <p class="verification-note">
-            This verification appears once before admin edit mode.
-          </p>
-        </div>
-      </div>
-    </div>
     <div class="admin-app hidden">
       <!-- ========================================================= -->
       <!-- ADMIN PANEL: Control panel sidebar / configuration editor -->
@@ -332,6 +284,7 @@
             <div class="grid-overlay" id="gridOverlay" hidden></div>
             <svg class="route-editor-svg" id="routeEditorSvg"></svg>
             <div class="route-points-layer" id="routePointsLayer"></div>
+            <div class="route-walker-layer" id="routeWalkerLayer"></div>
             <img class="floor-image" id="floorImage" alt="" hidden />
             <div class="empty-state" id="emptyState">
               <svg
@@ -460,6 +413,23 @@
     }
 
     async function verifyAdminPanelAccess() {
+      // Check if already verified in this session — skip overlay entirely if so
+      if (
+        sessionStorage.getItem('schoolmap_admin_verified') === '1' ||
+        localStorage.getItem('schoolmap_admin_verified') === '1'
+      ) {
+        var app = document.querySelector('.admin-app');
+        if (app) {
+          app.classList.remove('hidden');
+        }
+        var overlay = document.getElementById("adminLoadingOverlay");
+        if (overlay) {
+          overlay.style.display = "none";
+        }
+        return true;
+      }
+
+      // Not verified yet — show verification flow
       showAdminLoadingOverlay();
       updateAdminLoadingText('Verify admin access');
 
@@ -468,7 +438,6 @@
         showAdminAccessMessage('Admin access only. Please sign in with the administrator account.');
         setTimeout(function () { window.location.href = 'login.html'; }, 1200);
         return false;
-
       }
       window.SchoolMapCurrentUser = user;
       initializeAdminVerification();
@@ -510,6 +479,19 @@
             setTimeout(function () { window.location.href = "login.html"; }, 1200);
             return false;
           }
+        }
+
+        // Skip verification if already verified in this session
+        if (
+          sessionStorage.getItem('schoolmap_admin_verified') === '1' ||
+          localStorage.getItem('schoolmap_admin_verified') === '1'
+        ) {
+          hideAdminLoadingOverlay();
+          var app = document.querySelector('.admin-app');
+          if (app) {
+            app.classList.remove('hidden');
+          }
+          return true;
         }
 
         initializeAdminVerification();
@@ -567,6 +549,8 @@
 
           function finishVerification() {
             text.textContent = "Verified — loading admin console...";
+            sessionStorage.setItem("schoolmap_admin_verified", "1");
+            localStorage.setItem("schoolmap_admin_verified", "1");
             handle.style.transform = "translateX(" + maxX + "px)";
             setTimeout(function () {
               hideAdminLoadingOverlay();
@@ -601,13 +585,16 @@
             }
           });
 
-          document.addEventListener("pointerup", function () {
+          function cancelSlideVerification() {
             if (!dragging) {
               return;
             }
             dragging = false;
             resetHandle();
-          });
+          }
+
+          document.addEventListener("pointerup", cancelSlideVerification);
+          document.addEventListener("pointercancel", cancelSlideVerification);
         }
       }
     }
@@ -616,7 +603,7 @@
         verifyAdminPanelAccess();
       });
     </script>
-    <script src="../assets/js/core.js?v=20260511-logout-modal"></script>
-    <script src="../assets/js/admin-dashboard.js?v=20260512-route-scroll-panel-fix"></script>
+    <script src="../assets/js/core.js?v=20260512-verify-preview-fix"></script>
+    <script src="../assets/js/admin-dashboard.js?v=20260512-route-details-active-only"></script>
   </body>
 </html>

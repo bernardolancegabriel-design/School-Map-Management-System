@@ -215,7 +215,18 @@ function ensureLogoutModal() {
   return modal;
 }
 
+var logoutRedirectTarget = "index.html";
+
 function handleLogout() {
+  logoutRedirectTarget = "index.html";
+  var modal = ensureLogoutModal();
+  if (modal) {
+    modal.style.display = "flex";
+  }
+}
+
+function handleLogoutToIndex() {
+  logoutRedirectTarget = "index.html";
   var modal = ensureLogoutModal();
   if (modal) {
     modal.style.display = "flex";
@@ -227,6 +238,7 @@ function hideLogoutModal() {
   if (modal) {
     modal.style.display = "none";
   }
+  logoutRedirectTarget = "index.html";
 }
 
 function confirmLogout() {
@@ -239,10 +251,28 @@ function performLogout() {
     .finally(function () {
       AppState.currentUser = null;
       setCurrentUser(null);
+      sessionStorage.removeItem("schoolmap_admin_verified");
+      localStorage.removeItem("schoolmap_admin_verified");
       showToast("You have been signed out.");
       setTimeout(function () {
-        navigate("index");
+        if (logoutRedirectTarget === "index.html") {
+          window.location.replace("index.html");
+        } else {
+          navigate("index");
+        }
+        logoutRedirectTarget = "index.html";
       }, 250);
+    });
+}
+
+function forceLogoutToIndex() {
+  fetch(typeof apiUrl === "function" ? apiUrl("logout") : "../backend/api.php?action=logout", { credentials: "same-origin" })
+    .finally(function () {
+      AppState.currentUser = null;
+      setCurrentUser(null);
+      sessionStorage.removeItem("schoolmap_admin_verified");
+      localStorage.removeItem("schoolmap_admin_verified");
+      window.location.replace("index.html");
     });
 }
 
@@ -271,7 +301,7 @@ function requireSuperAdminPage() {
 var toastTimer = null;
 var toastHideTimer = null;
 
-function showToast(message) {
+function showToast(message, duration) {
   var toast = document.getElementById("toast");
   if (!toast) {
     return;
@@ -304,7 +334,7 @@ function showToast(message) {
       }
       toastHideTimer = null;
     }, 250);
-  }, 3000);
+  }, duration || 3000);
 }
 
 /* =========================================================
